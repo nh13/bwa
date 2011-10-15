@@ -216,8 +216,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		if (c != 0) {
 			z = (*p & occ_mask[n]) ^ n_mask[c];
 			y = __occ_aux_p(z);
+			*l = 0ul;
 			bwt_occ_pn(z, y, i, *l, *(--p) ^ n_mask[c])
-			*l = __occ_aux_p2(y);
+			*l += __occ_aux_p2(y);
 
 			z = (*p & occ_mask[k]) ^ n_mask[c];
 			y = __occ_aux_p(z);
@@ -232,8 +233,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		} else {
 			z = -(*p & occ_mask[n]) -1ul;
 			y = __occ_aux_p(z);
+			*l = 0ul;
 			bwt_occ_pn(z, y, i, *l, -*(--p) -1ul)
-			*l = __occ_aux_p2(y) - (n^31);
+			*l += __occ_aux_p2(y) - (n^31);
 
 			z = -(*p & occ_mask[k]) -1ul;
 			y = __occ_aux_p(z);
