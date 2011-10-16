@@ -223,10 +223,8 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			z = (*p & occ_mask[k]) ^ n_mask[c];
 			y = __occ_aux_p(z);
 			k = __occ_aux_p2(y) + 1;
-			if (k > *l) {
-				*l = bwt->seq_len;
-				return 0;
-			}
+			if (k > *l)
+				return -1u;
 			y = 0ul;
 			bwt_occ_p(z, y, m, *(--p) ^ n_mask[c])
 			kr += __occ_aux_p2(y);
@@ -240,10 +238,8 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			z = -(*p & occ_mask[k]) -1ul;
 			y = __occ_aux_p(z);
 			k = __occ_aux_p2(y) - (k^31) + 1;
-			if (k > *l) {
-				*l = bwt->seq_len;
-				return 0;
-			}
+			if (k > *l)
+				return -1u;
 			y = 0ul;
 			bwt_occ_p(z, y, m, -*(--p) -1ul)
 			kr += __occ_aux_p2(y);
@@ -254,10 +250,8 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		if (k != 0) {
 			*l = kr + bwt_occ((const uint64_t *)bwt->bwt, *l, i, c);
 			kr += bwt_occ((const uint64_t *)bwt->bwt, n, m, c);
-			if (++kr > *l) {
-				*l = bwt->seq_len;
-				kr = 0;
-			}
+			if (++kr > *l)
+				return -1u;
 		} else {
 			*l = bwt->L2[c+1];
 			++kr;
@@ -337,7 +331,7 @@ int bwt_match_exact(const bwt_t *bwt, int len, const ubyte_t *str, bwtint_t *sa_
 	k = 0; l = bwt->seq_len;
 	for (i = len - 1; i >= 0; --i) {
 		ubyte_t c = str[i];
-		if (c > 3 || !(k = bwt_2occ(bwt, k, &l, c)))
+		if (c > 3 || (k = bwt_2occ(bwt, k, &l, c)) == -1u)
 			return 0; // no match
 	}
 	if (sa_begin) *sa_begin = k;
@@ -352,7 +346,7 @@ int bwt_match_exact_alt(const bwt_t *bwt, int len, const ubyte_t *str, bwtint_t 
 	k = *k0; l = *l0;
 	for (i = len - 1; i >= 0; --i) {
 		ubyte_t c = str[i];
-		if (c > 3 || !(k = bwt_2occ(bwt, k, &l, c)))
+		if (c > 3 || (k = bwt_2occ(bwt, k, &l, c)) == -1u)
 			return 0; // no match
 	}
 	*k0 = k; *l0 = l;
