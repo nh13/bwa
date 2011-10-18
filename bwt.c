@@ -247,10 +247,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		*l += kr;
 		kr += k;
 	} else {
-		if (k != 0) {
+		if (likely(k != 0)) {
 			*l = kr + bwt_occ((const uint64_t *)bwt->bwt, *l, i, c);
-			kr += bwt_occ((const uint64_t *)bwt->bwt, n, m, c);
-			if (++kr > *l)
+			kr += bwt_occ((const uint64_t *)bwt->bwt, n, m, c) + 1;
+			if (unlikely(kr > *l))
 				return -1u;
 		} else {
 			*l = bwt->L2[c+1];
@@ -294,7 +294,7 @@ inline void bwt_2occ4(const bwt_t *bwt, bwtint_t k, bwtint_t l, bwtint_t cntk[4]
 	}
 	_k = (k >= bwt->primary)? k-1 : k;
 	_l = (l >= bwt->primary)? l-1 : l;
-	if (_l/OCC_INTERVAL != _k/OCC_INTERVAL || k == (bwtint_t)(-1) || l == (bwtint_t)(-1)) {
+	if (_l/OCC_INTERVAL != _k/OCC_INTERVAL || k == (bwtint_t)(-1) ||  unlikely(l == (bwtint_t)(-1))) {
 		bwt_occ4(bwt, k, cntk);
 		bwt_occ4(bwt, l, cntl);
 	} else {
@@ -346,7 +346,7 @@ int bwt_match_exact_alt(const bwt_t *bwt, int len, const ubyte_t *str, bwtint_t 
 	k = *k0; l = *l0;
 	for (i = len - 1; i >= 0; --i) {
 		ubyte_t c = str[i];
-		if (c > 3 || (k = bwt_2occ(bwt, k, &l, c)) == -1u)
+		if (unlikely(c > 3) || (k = bwt_2occ(bwt, k, &l, c)) == -1u)
 			return 0; // no match
 	}
 	*k0 = k; *l0 = l;

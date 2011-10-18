@@ -3,6 +3,7 @@
 #include <string.h>
 #include "bwtgap.h"
 #include "bwtaln.h"
+#include "utils.h"
 
 #define STATE_M 0
 #define STATE_I 1
@@ -50,7 +51,7 @@ static inline void gap_push(gap_stack_t *stack, int i, bwtint_t k, bwtint_t l, i
 	gap_stack1_t *q;
 	score = aln_score(n_mm, n_gapo, n_gape, opt);
 	q = stack->stacks + score;
-	if (q->n_entries == q->m_entries) {
+	if (unlikely(q->n_entries == q->m_entries)) {
 		q->m_entries <<= 1;
 		q->stack = (gap_entry_t*)realloc(q->stack, sizeof(gap_entry_t) * q->m_entries);
 	}
@@ -70,12 +71,14 @@ static inline void gap_pop(gap_stack_t *stack, gap_entry_t *e)
 	*e = q->stack[q->n_entries - 1];
 	--(q->n_entries);
 	--(stack->n_entries);
-	if (q->n_entries == 0 && stack->n_entries) { // reset best
+	if (q->n_entries == 0 && likely(stack->n_entries)) { // reset best
 		int i;
 		for (i = stack->best + 1; i < stack->n_stacks; ++i)
 			if (stack->stacks[i].n_entries != 0) break;
 		stack->best = i;
-	} else if (stack->n_entries == 0) stack->best = stack->n_stacks;
+	} else if (unlikely(stack->n_entries == 0)) {
+		stack->best = stack->n_stacks;
+	}
 }
 
 static inline void gap_shadow(int x, int len, bwtint_t max, int last_diff_pos, bwt_width_t *w)
@@ -143,20 +146,23 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 
 		m = max_diff - (e.n_mm + e.n_gapo);
 		if (opt->mode & BWA_MODE_GAPE) m -= e.n_gape;
-		if (m < 0) continue;
+		if (unlikely(m < 0)) continue;
 		bwt = bwts[1-a]; str = seq[a]; width = w[a];
 		//printf("#1\t[%d,%d,%d,%c]\t[%d,%d,%d]\t[%u,%u]\t[%u,%u]\t%d\n", stack->n_entries, a, i, "MID"[e.state], e.n_mm, e.n_gapo, e.n_gape, width[i-1].bid, width[i-1].w, k, l, e.last_diff_pos);
 		if (i > 0 && m < width[i-1].bid) continue;
 
 		// check whether a hit is found
 		hit_found = 0;
-		if (i == 0) hit_found = 1;
+		if (unlikely(i == 0)) {
+			hit_found = 1;
+		}
 		else if (m == 0 && (e.state == STATE_M || (opt->mode&BWA_MODE_GAPE) || e.n_gape == opt->max_gape)) { // no diff allowed
-			if (bwt_match_exact_alt(bwt, i, str, &k, &l)) hit_found = 1;
-			else continue; // no hit, skip
+			if (likely(!bwt_match_exact_alt(bwt, i, str, &k, &l)))
+				continue; // no hit, skip
+			hit_found = 1;
 		}
 
-		if (hit_found) { // action for found hits
+		if (unlikely(hit_found)) { // action for found hits
 			int score = aln_score(e.n_mm, e.n_gapo, e.n_gape, opt);
 			int do_add = 1;
 			//printf("#2 hits found: %d:(%u,%u)\n", e.n_mm+e.n_gapo, k, l);
@@ -196,7 +202,7 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 		occ = l - k + 1;
 		// test whether diff is allowed
 		allow_diff = allow_M = 1;
-		if (i > 0) {
+		if (likely(i > 0)) {
 			--m;
 			int ii = i - (len - opt->seed_len);
 			if (width[i-1].bid > m) allow_M = allow_diff = 0;
@@ -258,7 +264,7 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 				l = bwt->L2[cc] + cnt_l[cc];
 				if (k <= l) gap_push(stack, i, k, l, e.n_mm + is_mm, e.n_gapo, e.n_gape, STATE_M, is_mm, opt);
 			}
-		} else if (c < 4) { // try exact match only
+		} else if (likely(c < 4)) { // try exact match only
 			k = bwt->L2[c] + cnt_k[c] + 1;
 			l = bwt->L2[c] + cnt_l[c];
 			if (k <= l) gap_push(stack, i, k, l, e.n_mm, e.n_gapo, e.n_gape, STATE_M, 0, opt);
