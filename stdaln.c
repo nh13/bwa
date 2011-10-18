@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "stdaln.h"
+#include "utils.h"
 
 /* char -> 17 (=16+1) nucleotides */
 unsigned char aln_nt16_table[256] = {
@@ -249,8 +250,8 @@ void aln_free_AlnAln(AlnAln *aa)
 /* START OF common_align.c */
 /***************************/
 
-#define LOCAL_OVERFLOW_THRESHOLD 32000
-#define LOCAL_OVERFLOW_REDUCE 16000
+#define LOCAL_OVERFLOW_THRESHOLD 0x8000
+#define LOCAL_OVERFLOW_REDUCE 0x4000
 #define NT_LOCAL_SCORE int
 #define NT_LOCAL_SHIFT 16
 #define NT_LOCAL_MASK 0xffff
@@ -612,15 +613,15 @@ int aln_local_core(unsigned char *seq1, int len1, unsigned char *seq2, int len2,
 				f = (f > last_h - q)? f - r : last_h - qr;
 				if (curr_h < f) curr_h = f;
 			}
-			if (*(s+1) >= qr_shift) { /* initialize e */
+			if (unlikely(*(s+1) >= qr_shift)) { /* initialize e */
 				curr_last_h = *(s+1) >> NT_LOCAL_SHIFT;
 				e = ((*s & NT_LOCAL_MASK) > curr_last_h - q)? (*s & NT_LOCAL_MASK) - r : curr_last_h - qr;
 				if (curr_h < e) curr_h = e;
 				*s = (last_h << NT_LOCAL_SHIFT) | e;
 			} else *s = last_h << NT_LOCAL_SHIFT; /* e = 0 */
 			last_h = curr_h;
-			if (subo < curr_h) subo = curr_h;
-			if (score_f < curr_h) {
+			if (unlikely(subo < curr_h)) subo = curr_h;
+			if (unlikely(score_f < curr_h)) {
 				score_f = curr_h; end_i = i; end_j = j;
 				if (score_f > LOCAL_OVERFLOW_THRESHOLD) is_overflow = 1;
 			}
