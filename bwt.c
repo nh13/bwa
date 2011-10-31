@@ -242,6 +242,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		// todo (?): switch ((k&0x60u) | ((n&0x60u)>>5)) {
 		*l = ((uint32_t *)p)[c] + bwt->L2[c];
 		p += 2 + ((n&0x60u)>>5);
+		/*if (c != 0) {
+		} else {
+			z = 
+		}*/
 		y = (c ? (*p & occ_mask[n&31]) ^ x : (*p ^ x) & occ_mask[n&31]);
 		y = y & (y >> 1) & 0x5555555555555555ul;
 
@@ -278,17 +282,15 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 					y += w;
 				}
 				break;
-			case 32u:z = *(--p) ^ x;
-				y += (z & (z >> 1) & 0x5555555555555555ul);
+			case 32u:w = *(--p) ^ x;
+				y += (w & (w >> 1) & 0x5555555555555555ul);
 				w = y & 0x3333333333333333ul;
 				y = w + ((y - w) >> 2);
-				y = y + (y >> 4u);
 
 				z = (*p & occ_mask[k&31]) ^ (c != 0 ?
 					x : x & occ_mask[k&31]);
 				z = z & (z >> 1) & 0x5555555555555555ul;
 				z = (z + (z >> 2)) & 0x3333333333333333ul;
-				z = z + (z >> 4u);
 
 				if (y == z)
 					return -1u;
@@ -297,12 +299,12 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 					case 64u:
 					case 32u: w = *(--p) ^ x;
 						w = __occ_aux_p(w);
-						w = w + (w >> 4u);
 						z += w;
 						y += w;
 				}
-				z &= 0xf0f0f0f0f0f0f0ful;
-				y &= 0xf0f0f0f0f0f0f0ful;
+				y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+
 				if ((k&0x60u) == 64u /*(((n&0x60u) - (k&0x60u)) ^ 96u)*/) {
 					w = *(--p) ^ x;
 					w = __occ_aux_p(w);
@@ -311,26 +313,25 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 					y += w;
 				}
 				break;
-			case 64u:z = *(--p) ^ x;
-				y += z & (z >> 1) & 0x5555555555555555ul;
-				z = *(--p) ^ x;
-				y += z & (z >> 1) & 0x5555555555555555ul;
+			case 64u:w = *(--p) ^ x;
+				y += w & (w >> 1) & 0x5555555555555555ul;
+				w = *(--p) ^ x;
+				y += w & (w >> 1) & 0x5555555555555555ul;
 
 				w = y & 0x3333333333333333ul;
 				y = w + ((y - w) >> 2);
-				y = y + (y >> 4u);
 
 				z = (*p & occ_mask[k&31]) ^ (c != 0 ?
 					x : x & occ_mask[k&31]);
 				z = z & (z >> 1) & 0x5555555555555555ul;
 				z = (z + (z >> 2)) & 0x3333333333333333ul;
-				z = z + (z >> 4u);
 
 				if (unlikely(y == z))
 					return -1u;
 
-				z &= 0xf0f0f0f0f0f0f0ful;
-				y &= 0xf0f0f0f0f0f0f0ful;
+				y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+
 				if ((k&0x60u) == 32u /*(((n&0x60u) - (k&0x60u)) ^ 96u)*/) {
 					w = *(--p) ^ x;
 					w = __occ_aux_p(w);
@@ -340,10 +341,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 
 				}
 				break;
-			default: z = *(--p) ^ x;
-				y += z & (z >> 1) & 0x5555555555555555ul;
-				z = *(--p) ^ x;
-				y += z & (z >> 1) & 0x5555555555555555ul;
+			default: w = *(--p) ^ x;
+				y += w & (w >> 1) & 0x5555555555555555ul;
+				w = *(--p) ^ x;
+				y += w & (w >> 1) & 0x5555555555555555ul;
 
 				w = y & 0x3333333333333333ul;
 				y = w + ((y - w) >> 2);
