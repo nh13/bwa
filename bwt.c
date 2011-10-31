@@ -110,22 +110,24 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 	uint64_t z, y;
 	const uint64_t *p;
 	bwtint_t c, _isa, i;
-	_isa = (isa < bwt->primary) ? isa : isa - 1;
-	i = _isa/OCC_INTERVAL;
-	c = bwt_B0(bwt, _isa, i);
-	if (likely(isa < bwt->seq_len)) {
-		y = 0ul;
-		p = (const uint64_t *)bwt->bwt + i * 6;
-		isa = bwt->L2[c] + ((uint32_t *)p)[c];
-		p += 2;
-		bwt_occ_pn(z, y, _isa&0x60u, isa, *(p++) ^ n_mask[c])
-		z = (*p & occ_mask[_isa&31]) ^ n_mask[c];
-		y += __occ_aux_p(z);
-		isa += __occ_aux_p2(y);
-		if (c == 0)
-			isa -= ~_isa&31;
-	} else if (likely(isa != bwt->primary)) {
-		isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
+	if (likely(isa != bwt->primary)) {
+		_isa = (isa < bwt->primary) ? isa : isa - 1;
+		i = _isa/OCC_INTERVAL;
+		c = bwt_B0(bwt, _isa, i);
+		if (likely(isa < bwt->seq_len)) {
+			y = 0ul;
+			p = (const uint64_t *)bwt->bwt + i * 6;
+			isa = bwt->L2[c] + ((uint32_t *)p)[c];
+			p += 2;
+			bwt_occ_pn(z, y, _isa&0x60u, isa, *(p++) ^ n_mask[c])
+			z = (*p & occ_mask[_isa&31]) ^ n_mask[c];
+			y += __occ_aux_p(z);
+			isa += __occ_aux_p2(y);
+			if (c == 0)
+				isa -= ~_isa&31;
+		} else {
+			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
+		}
 	} else {
 		isa = 0;
 	}
