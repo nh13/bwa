@@ -198,7 +198,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	if ((k & ~0x7fu) - (n & ~0x7fu)) {
 		*l = ((uint32_t *)p)[c]; // is really k!!
 		p += 2 + ((k&0x60u)>>5);
-		z = (*p & occ_mask[k&31]) ^ x;
+		z = (c ? (*p & occ_mask[k&31]) ^ x : (*p ^ x) & occ_mask[k&31]);
 		y = __occ_aux_p(z);
 		switch (k&0x60u) { //32%/26%/21%/21%
 			case 96u: z = *(--p) ^ x;
@@ -210,14 +210,12 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 				y += __occ_aux_p(z);
 		}
 		*l += __occ_aux_p2(y);
-		if (c == 0)
-			*l -= ~k&31;
 		k = *l + 1;
 
 		p = (const uint64_t *)bwt->bwt + n/OCC_INTERVAL * 6;
 		*l = ((uint32_t *)p)[c];
 		p += 2+ ((n&0x60u)>>5);
-		z = (*p & occ_mask[n&31]) ^ x;
+		z = (c ? (*p & occ_mask[n&31]) ^ x : (*p ^ x) & occ_mask[n&31]);
 		y = __occ_aux_p(z);
 		switch (n&0x60u) {//24%/24%/23%/29%
 			case 96u: z = *(--p) ^ x;
@@ -229,9 +227,6 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 				y += __occ_aux_p(z);
 		}
 		*l += __occ_aux_p2(y);
-
-		if (c == 0)
-			*l -= ~n&31;
 
 		n = bwt->L2[c];
 		*l += n;
