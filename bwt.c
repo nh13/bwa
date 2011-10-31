@@ -74,6 +74,11 @@ static inline int __occ_aux(uint64_t y)
 	(z & 0x1111111111111111ul) + (z >> 2 & 0x1111111111111111ul);	\
 })
 
+#define __occ_aux_step(y, step) ({		\
+	(y) = (step);				\
+	(y) & ((y) >> 1) & 0x5555555555555555ul;\
+})
+
 #define __occ_aux_p2(y) ({						\
 	y = y + (y >> 4u);						\
 	(y & 0xf0f0f0f0f0f0f0ful) * 0x101010101010101ul >> 56;		\
@@ -81,47 +86,47 @@ static inline int __occ_aux(uint64_t y)
 
 #define bwt_occ_pn(z, y, l, n, trdp)			\
 switch (l) {						\
-	case 3: (z) = trdp;				\
+	case 96u: (z) = trdp;				\
 		(z) = __occ_aux_p(z);			\
 		n += __occ_aux_p2(z);			\
-	case 2: (z) = trdp;				\
+	case 64u: (z) = trdp;				\
 		(y) += __occ_aux_p(z);			\
-	case 1: (z) = trdp;				\
+	case 32u: (z) = trdp;				\
 		(y) += __occ_aux_p(z);			\
 }							\
 
 #define bwt_occ_p(z, y, l, trdp)			\
 switch (l) {						\
-	case 3: (z) = trdp;				\
+	case 96u: (z) = trdp;				\
 		(y) += __occ_aux_p(z);			\
-	case 2: (z) = trdp;				\
+	case 64u: (z) = trdp;				\
 		(y) += __occ_aux_p(z);			\
-	case 1: (z) = trdp;				\
+	case 32u: (z) = trdp;				\
 		(y) += __occ_aux_p(z);			\
 }
 
 static inline bwtint_t bwt_occ(const uint64_t *p, bwtint_t k, const ubyte_t c)
 {
 	uint64_t z, y = 0ul;
-	bwtint_t n, l;
+	bwtint_t n;
 	const bwtint_t ko = k / OCC_INTERVAL;
 	p += ko * 6;
 	n = ((uint32_t *)p)[c];
 	k -= ko * OCC_INTERVAL;
-	l = k >> 5;
 	p += 2; // jump to the start of the first BWT cell
 
 	// calculate Occ up to the last k/32
 	switch (c) {
-		case 0: k &= 31;
-			bwt_occ_pn(z, y, l, n, -*(p++) - 1ul)
+		case 0:
+			bwt_occ_pn(z, y, k&0x60u, n, -*(p++) - 1ul)
+			k &= 31;
 			z = -(*p & occ_mask[k]) - 1ul;
 			n -= (k^31);
 			break;
-		case 3: bwt_occ_pn(z, y, l, n, *(p++))
+		case 3: bwt_occ_pn(z, y, k&0x60u, n, *(p++))
 			z = *p & occ_mask[k&31];
 			break;
-		default: bwt_occ_pn(z, y, l, n, *(p++) ^ n_mask[c])
+		default: bwt_occ_pn(z, y, k&0x60u, n, *(p++) ^ n_mask[c])
 			z = (*p & occ_mask[k&31]) ^ n_mask[c];
 	}
 	y += __occ_aux_p(z);
@@ -197,7 +202,7 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 {
 	const uint64_t *p;
-	bwtint_t i, n;
+	bwtint_t n;
 	if (unlikely(k == 0u)) {
 		*l = bwt->L2[c+1];
 		return bwt->L2[c] + 1;
@@ -206,40 +211,145 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	k = (k >= bwt->primary)? k-1 : k;
 	n = *l;
 	n = (n >= bwt->primary)? n-1 : n;
-	if (n/OCC_INTERVAL == k/OCC_INTERVAL) {
-		uint64_t z, y;
-		bwtint_t m;
-		m = (n - (n/OCC_INTERVAL * OCC_INTERVAL)) >> 5; //total len
-		i = (k - (k/OCC_INTERVAL * OCC_INTERVAL)) >> 5; //k-len
-		// jump to the end of the last BWT cell
-		p = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6 + 2 + m;
-		*l = 0u;
-		y = (*p & occ_mask[n&31]) ^ n_mask[c];
-		y = __occ_aux_p(y);
-		bwt_occ_pn(z, y, m - i, *l, *(--p) ^ n_mask[c])
-		z = (*p & occ_mask[k&31]) ^ n_mask[c];
-		z = __occ_aux_p(z);
-		if (c != 0) {
-			*l += __occ_aux_p2(y);
-			k = __occ_aux_p2(z) + 1;
-		} else {
-			*l += __occ_aux_p2(y) - (~n&31);
-			k = __occ_aux_p2(z) - (~k&31) + 1;
-		}
-		if (k > *l)
-			return -1u;
-		y = 0ul;
-		bwt_occ_p(z, y, i, *(--p) ^ n_mask[c])
-		n = ((uint32_t *)p - 4)[c] + bwt->L2[c] + __occ_aux_p2(y);
-	} else {
+	if ((k & ~0x7fu) - (n & ~0x7fu)) {
 		*l = bwt_occ((const uint64_t *)bwt->bwt, n, c);
 		k = bwt_occ((const uint64_t *)bwt->bwt, k, c) + 1;
 		if (unlikely(k > *l))
 			return -1u;
 		n = bwt->L2[c];
+		*l += n;
+		k += n;
+	} else {
+		uint64_t w, x, z, y;
+		// jump to the end of the last BWT cell
+		p = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
+		// todo (?): switch ((k&0x60u) | ((n&0x60u)>>5)) {
+		x = n_mask[c];
+		*l = ((uint32_t *)p)[c] + bwt->L2[c];
+		p += 2 + ((n&0x60u)>>5);
+		y = (c ? (*p & occ_mask[n&31]) ^ x : (*p ^ x) & occ_mask[n&31]);
+		y = y & (y >> 1) & 0x5555555555555555ul;
+
+		switch ((n&0x60u) - (k&0x60u)) { // 80%/15%/3%/1%
+			case 0u:z = (c ? (*p & occ_mask[k&31]) ^ x :
+					(*p ^ x) & occ_mask[k&31]);
+				z = z & (z >> 1) & 0x5555555555555555ul;
+
+				if (y == z)
+					return -1u;
+				switch (k&0x60u) { // 25%/25%/25%/25%
+					case 96u:
+					case 64u: w = *(--p) ^ x;
+						w = w & (w >> 1) & 0x5555555555555555ul;
+						z += w;
+						y += w;
+					case 32u:w = *(--p) ^ x;
+						w = w & (w >> 1) & 0x5555555555555555ul;
+						z += w;
+						y += w;
+				}
+				w = z & 0x3333333333333333ul;
+				z = w + ((z - w) >> 2);
+				w = y & 0x3333333333333333ul;
+				y = w + ((y - w) >> 2);
+
+				z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				if ((k&0x60u) == 96u) {
+					w = *(--p) ^ x;
+					w = __occ_aux_p(w);
+					w = (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+					z += w;
+					y += w;
+				}
+				break;
+			case 32u:z = *(--p) ^ x;
+				y += (z & (z >> 1) & 0x5555555555555555ul);
+				w = y & 0x3333333333333333ul;
+				y = w + ((y - w) >> 2);
+				y = y + (y >> 4u);
+
+				z = (*p & occ_mask[k&31]) ^ (c != 0 ?
+					x : x & occ_mask[k&31]);
+				z = z & (z >> 1) & 0x5555555555555555ul;
+				z = (z + (z >> 2)) & 0x3333333333333333ul;
+				z = z + (z >> 4u);
+
+				if (y == z)
+					return -1u;
+
+				switch (k&0x60u) {
+					case 64u:
+					case 32u: w = *(--p) ^ x;
+						w = __occ_aux_p(w);
+						w = w + (w >> 4u);
+						z += w;
+						y += w;
+				}
+				z &= 0xf0f0f0f0f0f0f0ful;
+				y &= 0xf0f0f0f0f0f0f0ful;
+				if ((k&0x60u) == 64u) {
+					w = *(--p) ^ x;
+					w = __occ_aux_p(w);
+					w = (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+					z += w;
+					y += w;
+				}
+				break;
+			case 64u:z = *(--p) ^ x;
+				y += z & (z >> 1) & 0x5555555555555555ul;
+				z = *(--p) ^ x;
+				y += z & (z >> 1) & 0x5555555555555555ul;
+
+				w = y & 0x3333333333333333ul;
+				y = w + ((y - w) >> 2);
+				y = y + (y >> 4u);
+
+				z = (*p & occ_mask[k&31]) ^ (c != 0 ?
+					x : x & occ_mask[k&31]);
+				z = z & (z >> 1) & 0x5555555555555555ul;
+				z = (z + (z >> 2)) & 0x3333333333333333ul;
+				z = z + (z >> 4u);
+
+				if (unlikely(y == z))
+					return -1u;
+
+				z &= 0xf0f0f0f0f0f0f0ful;
+				y &= 0xf0f0f0f0f0f0f0ful;
+				if ((k&0x60u) == 32u) {
+					w = *(--p) ^ x;
+					w = __occ_aux_p(w);
+					w = (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+					z += w;
+					y += w;
+
+				}
+				break;
+			default: z = *(--p) ^ x;
+				y += z & (z >> 1) & 0x5555555555555555ul;
+				z = *(--p) ^ x;
+				y += z & (z >> 1) & 0x5555555555555555ul;
+
+				w = y & 0x3333333333333333ul;
+				y = w + ((y - w) >> 2);
+				y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+
+				w = *(--p) ^ x;
+				w = __occ_aux_p(w);
+				w = (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				y += w;
+
+				z = (*p & occ_mask[k&31]) ^ (c != 0 ?
+					x : x & occ_mask[k&31]);
+				z = __occ_aux_p(z);
+				z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				if (unlikely(y == z))
+					return -1u;
+		}
+		k = *l + (z * 0x101010101010101ul >> 56) + 1;
+		*l += y * 0x101010101010101ul >> 56;
 	}
-	*l += n;
-	return k + n;
+	return k;
 }
 
 #define __occ_aux4(bwt, b)											\
