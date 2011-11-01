@@ -130,49 +130,56 @@ static uint64_t bwt_occ(const uint64_t x, const bwtint_t k, const uint64_t *p, c
 	return z;
 }
 
-static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
+static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, bwtint_t isa)
 {
-	if (likely(isa != bwt->primary)) {
-		bwtint_t c, _i, so;
-		_i = (isa < bwt->primary) ? isa : isa - 1;
-		so = _i/OCC_INTERVAL;
-		c = bwt_B0(bwt, _i, so);
-		if (likely(isa < bwt->seq_len)) {
-			uint64_t z = n_mask[c];
-			const uint64_t *p = (const uint64_t *)bwt->bwt + so * 6;
-			z = bwt_occ(z, _i, p, c);
-			isa = bwt->L2[c] + ((uint32_t *)p)[c] +
-				(z * 0x101010101010101ul >> 56);
-		} else {
-			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
-		}
+	bwtint_t c;
+	if (likely(isa < bwt->seq_len)) {
+		c = isa/OCC_INTERVAL;
+		uint64_t z;
+		const uint32_t *p = bwt->bwt + c * 12;
+		c = bwt_B0(bwt, isa, c);
+		z = n_mask[c];
+		z = bwt_occ(z, isa, (const uint64_t *)p, c);
+		isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
 	} else {
-		isa = 0;
+		if (isa != bwt->primary) {
+			if (isa >= bwt->primary) 
+				--isa;
+			c = bwt_B0(bwt, isa, isa/OCC_INTERVAL);
+			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
+		} else {
+			isa = 0;
+		}
 	}
 
 	return isa;
 }
 
-// bwt->bwt and bwt->occ must be precalculated
-void bwt_cal_sa(bwt_t *bwt, int intv)
+//more common
+static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 {
-	bwtint_t isa, sa, i; // S(isa) = sa
+	bwtint_t c;
+	if (likely(isa < bwt->seq_len)) {
+		if (likely(isa != bwt->primary)) {
+			uint64_t z;
+			if (isa >= bwt->primary)
+				--isa;
+			c = isa/OCC_INTERVAL;
+			const uint32_t *p = bwt->bwt + c * 12;
+			c = bwt_B0(bwt, isa, c);
 
-	xassert(bwt->bwt, "bwt_t::bwt is not initialized.");
-
-	if (bwt->sa) free(bwt->sa);
-	bwt->sa_intv = intv;
-	bwt->n_sa = (bwt->seq_len + intv) / intv;
-	bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
-	// calculate SA value
-	isa = 0; sa = bwt->seq_len;
-	for (i = 0; i < bwt->seq_len; ++i) {
-		if (isa % intv == 0) bwt->sa[isa/intv] = sa;
-		--sa;
-		isa = cal_isa(bwt, isa);
+			z = n_mask[c];
+			z = bwt_occ(z, isa, (const uint64_t *)p, c);
+			isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
+		} else {
+			isa = 0;
+		}
+	} else {
+		--isa;
+		c = bwt_B0(bwt, isa, isa/OCC_INTERVAL);
+		isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
 	}
-	if (isa % intv == 0) bwt->sa[isa/intv] = sa;
-	bwt->sa[0] = (bwtint_t)-1; // before this line, bwt->sa[0] = bwt->seq_len
+	return isa;
 }
 
 bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
@@ -190,13 +197,51 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 	} else {
 		add = 0;
 	}
-	while (((k + add) & m)) {
-		++sa;
-		k = cal_isa(bwt, k);
+	if (likely(bwt->primary <= bwt->seq_len)) {
+		while (((k + add) & m)) {
+			++sa;
+			k = cal_isa_PleSl(bwt, k);
+		}
+	} else {
+		while (((k + add) & m)) {
+			++sa;
+			k = cal_isa_PgtSl(bwt, k);
+		}
 	}
 	/* without setting bwt->sa[0] = -1, the following line should be
 	   changed to (sa + bwt->sa[k/bwt->sa_intv]) % (bwt->seq_len + 1) */
 	return sa + bwt->sa[k/bwt->sa_intv];
+}
+
+
+// bwt->bwt and bwt->occ must be precalculated
+void bwt_cal_sa(bwt_t *bwt, int intv)
+{
+	bwtint_t isa, sa, i; // S(isa) = sa
+
+	xassert(bwt->bwt, "bwt_t::bwt is not initialized.");
+
+	if (bwt->sa) free(bwt->sa);
+	bwt->sa_intv = intv;
+	bwt->n_sa = (bwt->seq_len + intv) / intv;
+	bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
+	// calculate SA value
+	isa = 0; sa = bwt->seq_len;
+	if (likely(bwt->primary <= bwt->seq_len)) {
+		for (i = 0; i < bwt->seq_len; ++i) {
+			if (isa % intv == 0) bwt->sa[isa/intv] = sa;
+			--sa;
+			isa = cal_isa_PleSl(bwt, isa);
+		}
+	} else {
+		for (i = 0; i < bwt->seq_len; ++i) {
+			if (isa % intv == 0) bwt->sa[isa/intv] = sa;
+			--sa;
+			isa = cal_isa_PgtSl(bwt, isa);
+		}
+	}
+	if (isa % intv == 0) bwt->sa[isa/intv] = sa;
+	bwt->sa[0] = (bwtint_t)-1; // before this line, bwt->sa[0] = bwt->seq_len
 }
 
 // an analogy to bwt_occ() but more efficient, requiring k <= l
