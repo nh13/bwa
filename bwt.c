@@ -138,30 +138,14 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t i)
 		i = _i/OCC_INTERVAL;
 		c = bwt_B0(bwt, _i, i);
 		if (likely(i < bwt->seq_len)) {
-			uint64_t z, w, x = n_mask[c];
+			uint64_t z = n_mask[c];
 			const uint64_t *p = (const uint64_t *)bwt->bwt + i * 6;
-
-			i = bwt->L2[c] + ((uint32_t *)p)[c];
-			p += 2 + ((_i&0x60u)>>5);
-			z = (c ? (*p & occ_mask[_i&31]) ^ x : (*p ^ x) & occ_mask[_i&31]);
-			z = z & (z >> 1) & 0x5555555555555555ul;
-			switch (_i&0x60u) {
-				case 96u:
-				case 64u:w = *(--p) ^ x;
-					z += w & (w >> 1) & 0x5555555555555555ul;
-				case 32u:w = *(--p) ^ x;
-					z += w & (w >> 1) & 0x5555555555555555ul;
-			}
-			w = z & 0x3333333333333333ul;
-			z = w + ((z - w) >> 2);
-			z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
-
-			if ((_i&0x60u) == 96u) {
-				w = *(--p) ^ x;
-				w = __occ_aux_p(w);
-				z += (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
-			}
-			i += (z * 0x101010101010101ul >> 56);
+			z = bwt_occ(z, _i, p, c);
+			i = bwt->L2[c] + ((uint32_t *)p)[c] +
+				(z * 0x101010101010101ul >> 56);
+			//i = bwt->L2[c] + ((uint32_t *)p)[c] +
+			//	(bwt_occ(n_mask[c], _i, bwt->bwt + i * 6, c) *
+			//	0x101010101010101ul >> 56);
 		} else {
 			i = (i == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
 		}
@@ -235,13 +219,14 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	p = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
 	w = 0ul;
-	if ((k & ~0x7fu) - (n & ~0x7fu)) {
+	if ((k & ~0x7fu) - (n & ~0x7fu)) { //49%/50%
 		z = bwt_occ(x, k, p, c);
 		k = *l;
 
 		p = (const uint64_t *)bwt->bwt + n/OCC_INTERVAL * 6;
 		*l = ((uint32_t *)p)[c] + bwt->L2[c];
 		y = bwt_occ(x, n, p, c);
+		//it appears that in this case k cannot be *l ??? more testing needed?
 	} else {
 		// jump to the end of the last BWT cell
 		// todo (?): switch ((k&0x60u) | ((n&0x60u)>>5)) {
@@ -257,11 +242,11 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 				if (y != z) {
 					uint64_t v;
 					switch (k&0x60u) { // 25%/25%/25%/25%
-						case 96u:
-						case 64u: v = *(--p) ^ x;
+						case 0x60u:
+						case 0x40u: v = *(--p) ^ x;
 							w = v & (v >> 1) &
 								0x5555555555555555ul;
-						case 32u:v = *(--p) ^ x;
+						case 0x20u:v = *(--p) ^ x;
 							v = w + (v & (v >> 1) &
 								0x5555555555555555ul);
 							z += v;
@@ -289,8 +274,8 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 
 				if (y != z) {
 					switch (k&0x60u) {
-						case 64u:
-						case 32u: w = *(--p) ^ x;
+						case 0x40u:
+						case 0x20u: w = *(--p) ^ x;
 							w = __occ_aux_p(w);
 							z += w;
 							y += w;
@@ -317,6 +302,8 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 				}
 				z = (*p & occ_mask[k&31]) ^ (c != 0 ? x : x & occ_mask[k&31]);
 				z = __occ_aux_p(z);
+				if (y == z)
+					return -1u;
 		}
 		z = ((z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 		if ((n&0x60u) == 0x60u && (k&0x60u)) {
@@ -330,8 +317,6 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	}
 	k += (z * 0x101010101010101ul >> 56) + 1;
 	*l += y * 0x101010101010101ul >> 56;
-	if (unlikely(k > *l))
-		k = -1u;
 	return k;
 }
 
