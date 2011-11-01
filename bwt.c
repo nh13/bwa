@@ -143,7 +143,7 @@ static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, bwtint_t isa)
 		isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
 	} else {
 		if (isa != bwt->primary) {
-			if (isa >= bwt->primary) 
+			if (isa > bwt->primary) 
 				--isa;
 			c = bwt_B0(bwt, isa, isa/OCC_INTERVAL);
 			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
@@ -162,7 +162,7 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 	if (likely(isa < bwt->seq_len)) {
 		if (likely(isa != bwt->primary)) {
 			uint64_t z;
-			if (isa >= bwt->primary)
+			if (isa > bwt->primary)
 				--isa;
 			c = isa/OCC_INTERVAL;
 			const uint32_t *p = bwt->bwt + c * 12;
