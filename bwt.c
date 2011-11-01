@@ -130,30 +130,27 @@ static uint64_t bwt_occ(const uint64_t x, const bwtint_t k, const uint64_t *p, c
 	return z;
 }
 
-static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t i)
+static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 {
-	if (likely(i != bwt->primary)) {
-		bwtint_t c, _i;
-		_i = (i < bwt->primary) ? i : i - 1;
-		i = _i/OCC_INTERVAL;
-		c = bwt_B0(bwt, _i, i);
-		if (likely(i < bwt->seq_len)) {
+	if (likely(isa != bwt->primary)) {
+		bwtint_t c, _i, so;
+		_i = (isa < bwt->primary) ? isa : isa - 1;
+		so = _i/OCC_INTERVAL;
+		c = bwt_B0(bwt, _i, so);
+		if (likely(isa < bwt->seq_len)) {
 			uint64_t z = n_mask[c];
-			const uint64_t *p = (const uint64_t *)bwt->bwt + i * 6;
+			const uint64_t *p = (const uint64_t *)bwt->bwt + so * 6;
 			z = bwt_occ(z, _i, p, c);
-			i = bwt->L2[c] + ((uint32_t *)p)[c] +
+			isa = bwt->L2[c] + ((uint32_t *)p)[c] +
 				(z * 0x101010101010101ul >> 56);
-			//i = bwt->L2[c] + ((uint32_t *)p)[c] +
-			//	(bwt_occ(n_mask[c], _i, bwt->bwt + i * 6, c) *
-			//	0x101010101010101ul >> 56);
 		} else {
-			i = (i == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
+			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
 		}
 	} else {
-		i = 0;
+		isa = 0;
 	}
 
-	return i;
+	return isa;
 }
 
 // bwt->bwt and bwt->occ must be precalculated
