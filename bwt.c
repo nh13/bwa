@@ -131,17 +131,17 @@ static void bwt_occ(const bwtint_t k, uint64_t *const z, const uint64_t *p, cons
 	}
 }
 
-static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, bwtint_t isa)
+static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, uint64_t *const z, bwtint_t isa)
 {
 	bwtint_t c;
+	isa += (*z * 0x101010101010101ul >> 56);
 	if (likely(isa < bwt->seq_len)) {
 		c = isa/OCC_INTERVAL;
-		uint64_t z;
 		const uint32_t *p = bwt->bwt + c * 12;
 		c = bwt_B0(bwt, isa, c);
-		z = n_mask[c];
-		bwt_occ(isa, &z, (const uint64_t *)p, c);
-		isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
+		*z = n_mask[c];
+		bwt_occ(isa, z, (const uint64_t *)p, c);
+		isa = bwt->L2[c] + p[c];
 	} else {
 		if (isa != bwt->primary) {
 			if (isa > bwt->primary) 
@@ -149,42 +149,45 @@ static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, bwtint_t isa)
 			c = bwt_B0(bwt, isa, isa/OCC_INTERVAL);
 			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
 		} else {
-			isa = 0;
+			isa = 0u;
 		}
+		*z = 0ul;
 	}
 
 	return isa;
 }
 
 //more common
-static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
+static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, uint64_t *const z, bwtint_t isa)
 {
 	bwtint_t c;
+	isa += (*z * 0x101010101010101ul >> 56);
 	if (likely(isa < bwt->seq_len)) {
-		if (likely(isa != bwt->primary)) {
-			uint64_t z;
-			if (isa > bwt->primary)
+		if (likely(isa != bwt->primary)) { /* TODO: isa < bwt->primary || isa-- != bwt->primary)) { */
+			if (isa > bwt->primary)/**/
 				--isa;
 			c = isa/OCC_INTERVAL;
 			const uint32_t *p = bwt->bwt + c * 12;
 			c = bwt_B0(bwt, isa, c);
-
-			z = n_mask[c];
-			bwt_occ(isa, &z, (const uint64_t *)p, c);
-			isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
+			*z = n_mask[c];
+			bwt_occ(isa, z, (const uint64_t *)p, c);
+			isa = bwt->L2[c] + p[c];
 		} else {
-			isa = 0;
+			isa = 0u;
+			*z = 0ul;
 		}
 	} else {
 		--isa;
 		c = bwt_B0(bwt, isa, isa/OCC_INTERVAL);
 		isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
+		*z = 0ul;
 	}
 	return isa;
 }
 
 bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 {
+	uint64_t z = 0ul;
 	bwtint_t m, add, sa = 0;
 	m = bwt->sa_intv - 1;
 	if ((m+1) & m) { // not power of 2 before decrement
@@ -199,16 +202,21 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 		add = 0;
 	}
 	if (likely(bwt->primary <= bwt->seq_len)) {
-		while (((k + add) & m)) {
+		while ((k + add) & m) {
 			++sa;
-			k = cal_isa_PleSl(bwt, k);
+			k -= (z * 0x101010101010101ul >> 56);
+			k = cal_isa_PleSl(bwt, &z, k);
+			k += (z * 0x101010101010101ul >> 56);
 		}
 	} else {
-		while (((k + add) & m)) {
+		while ((k + add) & m) {
 			++sa;
-			k = cal_isa_PgtSl(bwt, k);
+			k -= (z * 0x101010101010101ul >> 56);
+			k = cal_isa_PgtSl(bwt, &z, k);
+			k += (z * 0x101010101010101ul >> 56);
 		}
 	}
+	//k += (z * 0x101010101010101ul >> 56);
 	/* without setting bwt->sa[0] = -1, the following line should be
 	   changed to (sa + bwt->sa[k/bwt->sa_intv]) % (bwt->seq_len + 1) */
 	return sa + bwt->sa[k/bwt->sa_intv];
@@ -218,6 +226,7 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 // bwt->bwt and bwt->occ must be precalculated
 void bwt_cal_sa(bwt_t *bwt, int intv)
 {
+	uint64_t z = 0ul;
 	bwtint_t isa, sa, i; // S(isa) = sa
 
 	xassert(bwt->bwt, "bwt_t::bwt is not initialized.");
@@ -230,17 +239,24 @@ void bwt_cal_sa(bwt_t *bwt, int intv)
 	isa = 0; sa = bwt->seq_len;
 	if (likely(bwt->primary <= bwt->seq_len)) {
 		for (i = 0; i < bwt->seq_len; ++i) {
-			if (isa % intv == 0) bwt->sa[isa/intv] = sa;
+			isa += (z * 0x101010101010101ul >> 56);
+			if (isa % intv == 0)
+				bwt->sa[isa/intv] = sa;
+			isa -= (z * 0x101010101010101ul >> 56);
 			--sa;
-			isa = cal_isa_PleSl(bwt, isa);
+			isa = cal_isa_PleSl(bwt, &z, isa);
 		}
 	} else {
 		for (i = 0; i < bwt->seq_len; ++i) {
-			if (isa % intv == 0) bwt->sa[isa/intv] = sa;
+			isa += (z * 0x101010101010101ul >> 56);
+			if (isa % intv == 0)
+				bwt->sa[isa/intv] = sa;
+			isa -= (z * 0x101010101010101ul >> 56);
 			--sa;
-			isa = cal_isa_PgtSl(bwt, isa);
+			isa = cal_isa_PgtSl(bwt, &z, isa);
 		}
 	}
+	isa += (z * 0x101010101010101ul >> 56);
 	if (isa % intv == 0) bwt->sa[isa/intv] = sa;
 	bwt->sa[0] = (bwtint_t)-1; // before this line, bwt->sa[0] = bwt->seq_len
 }
