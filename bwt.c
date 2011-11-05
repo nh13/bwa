@@ -105,29 +105,30 @@ switch (l) {						\
 		(y) += __occ_aux_p(z);			\
 }
 
-static uint64_t bwt_occ(const uint64_t x, const bwtint_t k, const uint64_t *p, const ubyte_t c)
+static void bwt_occ(const bwtint_t k, uint64_t *const z, const uint64_t *p, const ubyte_t c)
 {
-	uint64_t z, w;
+	uint64_t x, w = occ_mask[k&31];
 	p += 2 + ((k&0x60u)>>5);
-	z = (c ? (*p & occ_mask[k&31]) ^ x : (*p ^ x) & occ_mask[k&31]);
-	z = z & (z >> 1) & 0x5555555555555555ul;
+	x = (c ? (*p & w) ^ *z : (*p ^ *z) & w);
+	w = x & (x >> 1) & 0x5555555555555555ul;
 	switch (k&0x60u) { //32%/26%/21%/21%
 		case 96u:
-		case 64u:w = *(--p) ^ x;
-			z += w & (w >> 1) & 0x5555555555555555ul;
-		case 32u:w = *(--p) ^ x;
-			z += w & (w >> 1) & 0x5555555555555555ul;
+		case 64u:x = *(--p) ^ *z;
+			 w += x & (x >> 1) & 0x5555555555555555ul;
+		case 32u:x = *(--p) ^ *z;
+			w += x & (x >> 1) & 0x5555555555555555ul;
 	}
-	w = z & 0x3333333333333333ul;
-	z = w + ((z - w) >> 2);
-	z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+	x = w & 0x3333333333333333ul;
+	x = x + ((w - x) >> 2);
 
-	if ((k&0x60u) == 96u) {
-		w = *(--p) ^ x;
+	if ((k&0x60u) != 96u) {
+		*z = (x + (x >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+	} else {
+		w = *(--p) ^ *z;
 		w = __occ_aux_p(w);
-		z += (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+		*z = ((x + (x >> 4u)) & 0xf0f0f0f0f0f0f0ful) +
+			((w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 	}
-	return z;
 }
 
 static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, bwtint_t isa)
@@ -139,7 +140,7 @@ static inline bwtint_t cal_isa_PgtSl(const bwt_t *bwt, bwtint_t isa)
 		const uint32_t *p = bwt->bwt + c * 12;
 		c = bwt_B0(bwt, isa, c);
 		z = n_mask[c];
-		z = bwt_occ(z, isa, (const uint64_t *)p, c);
+		bwt_occ(isa, &z, (const uint64_t *)p, c);
 		isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
 	} else {
 		if (isa != bwt->primary) {
@@ -169,7 +170,7 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 			c = bwt_B0(bwt, isa, c);
 
 			z = n_mask[c];
-			z = bwt_occ(z, isa, (const uint64_t *)p, c);
+			bwt_occ(isa, &z, (const uint64_t *)p, c);
 			isa = bwt->L2[c] + p[c] + (z * 0x101010101010101ul >> 56);
 		} else {
 			isa = 0;
@@ -262,12 +263,14 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
 	w = 0ul;
 	if ((k & ~0x7fu) - (n & ~0x7fu)) { //49%/50%
-		z = bwt_occ(x, k, p, c);
+		z = x;
+		bwt_occ(k, &z, p, c);
 		k = *l;
 
 		p = (const uint64_t *)bwt->bwt + n/OCC_INTERVAL * 6;
 		*l = ((uint32_t *)p)[c] + bwt->L2[c];
-		y = bwt_occ(x, n, p, c);
+		y = x;
+		bwt_occ(n, &y, p, c);
 		//it appears that in this case k cannot be *l ??? more testing needed?
 	} else {
 		// jump to the end of the last BWT cell
