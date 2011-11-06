@@ -77,42 +77,6 @@ static inline int __occ_aux(uint64_t y)
 	return ((y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful) * 0x101010101010101ul >> 56;
 }
 
-#define __occ_aux_p(z) ({ 						\
-	z = (z >> 1) & z;						\
-	(z & 0x1111111111111111ul) + (z >> 2 & 0x1111111111111111ul);	\
-})
-
-#define __occ_aux_step(y, step) ({		\
-	(y) = (step);				\
-	(y) & ((y) >> 1) & 0x5555555555555555ul;\
-})
-
-#define __occ_aux_p2(y) ({						\
-	y = y + (y >> 4u);						\
-	(y & 0xf0f0f0f0f0f0f0ful) * 0x101010101010101ul >> 56;		\
-})
-
-#define bwt_occ_pn(z, y, l, n, trdp)			\
-switch (l) {						\
-	case 96u: (z) = trdp;				\
-		(z) = __occ_aux_p(z);			\
-		n += __occ_aux_p2(z);			\
-	case 64u: (z) = trdp;				\
-		(y) += __occ_aux_p(z);			\
-	case 32u: (z) = trdp;				\
-		(y) += __occ_aux_p(z);			\
-}							\
-
-#define bwt_occ_p(z, y, l, trdp)			\
-switch (l) {						\
-	case 96u: (z) = trdp;				\
-		(y) += __occ_aux_p(z);			\
-	case 64u: (z) = trdp;				\
-		(y) += __occ_aux_p(z);			\
-	case 32u: (z) = trdp;				\
-		(y) += __occ_aux_p(z);			\
-}
-
 static inline void bwt_occ(const bwtint_t k, const uint64_t w, uint64_t *const z, const uint64_t *const p)
 {
 	uint64_t y, x = *z;
@@ -328,7 +292,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 					switch (k&0x60u) {
 						case 0x40u:
 						case 0x20u: w = *(--p) ^ x;
-							w = __occ_aux_p(w);
+							w = (w >> 1) & w;
+							w = (w & 0x1111111111111111ul) +
+								(w >> 2 & 0x1111111111111111ul);
 							z += w;
 							y += w;
 					}
@@ -348,7 +314,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 
 				if ((n&0x60u) == 96u && (k&0x60u) == 0u) {
 					z = *(--p) ^ x;
-					z = __occ_aux_p(z);
+					z = (z >> 1) & z;
+					z = (z & 0x1111111111111111ul) +
+						(z >> 2 & 0x1111111111111111ul);
 					z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
 					y += z;
 				}
@@ -361,7 +329,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		z = ((z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 		if ((n&0x60u) == 0x60u && (k&0x60u)) {
 			w = *(--p) ^ x;
-			w = __occ_aux_p(w);
+			w = (w >> 1) & w;
+			w = (w & 0x1111111111111111ul) +
+				(w >> 2 & 0x1111111111111111ul);
 			w = (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
 			z += w;
 			y += w;
