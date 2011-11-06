@@ -33,18 +33,25 @@
 #include "utils.h"
 #include "bwt.h"
 
-static const uint64_t occ_mask[32] = {
-	0xc0000000ul, 	0xf0000000ul, 	0xfc000000ul,
-	0xff000000ul, 	0xffc00000ul, 	0xfff00000ul,
-	0xfffc0000ul, 	0xffff0000ul, 	0xffffc000ul,
-	0xfffff000ul, 	0xfffffc00ul, 	0xffffff00ul,
-	0xffffffc0ul, 	0xfffffff0ul, 	0xfffffffcul,
-	0xfffffffful, 	0xc0000000fffffffful, 	0xf0000000fffffffful,
-	0xfc000000fffffffful, 	0xff000000fffffffful, 	0xffc00000fffffffful,
-	0xfff00000fffffffful, 	0xfffc0000fffffffful, 	0xffff0000fffffffful,
-	0xffffc000fffffffful, 	0xfffff000fffffffful, 	0xfffffc00fffffffful,
-	0xffffff00fffffffful, 	0xffffffc0fffffffful, 	0xfffffff0fffffffful,
-	0xfffffffcfffffffful, 0xfffffffffffffffful
+static const uint32_t occ_mask[16] = {
+	0xc0000000u, 0xf0000000u, 0xfc000000u, 0xff000000u,
+	0xffc00000u, 0xfff00000u, 0xfffc0000u, 0xffff0000u, 
+	0xffffc000u, 0xfffff000u, 0xfffffc00u, 0xffffff00u,
+	0xffffffc0u, 0xfffffff0u, 0xfffffffcu, 0xffffffffu
+};
+
+static const uint64_t occ_mask2[32] = {
+	0x40000000ul, 	0x50000000ul, 	0x54000000ul,
+	0x55000000ul, 	0x55400000ul, 	0x55500000ul,
+	0x55540000ul, 	0x55550000ul, 	0x55554000ul,
+	0x55555000ul, 	0x55555400ul, 	0x55555500ul,
+	0x55555540ul, 	0x55555550ul, 	0x55555554ul,
+	0x55555555ul, 	0x4000000055555555ul, 	0x5000000055555555ul,
+	0x5400000055555555ul, 	0x5500000055555555ul, 	0x5540000055555555ul,
+	0x5550000055555555ul, 	0x5554000055555555ul, 	0x5555000055555555ul,
+	0x5555400055555555ul, 	0x5555500055555555ul, 	0x5555540055555555ul,
+	0x5555550055555555ul, 	0x5555554055555555ul, 	0x5555555055555555ul,
+	0x5555555455555555ul, 0x5555555555555555ul
 };
 
 static const uint64_t n_mask[5] = { 0xfffffffffffffffful, 0xaaaaaaaaaaaaaaaaul, 
@@ -106,12 +113,11 @@ switch (l) {						\
 		(y) += __occ_aux_p(z);			\
 }
 
-static inline void bwt_occ(const bwtint_t k, uint64_t w, uint64_t *const z, const uint64_t *const p)
+static inline void bwt_occ(const bwtint_t k, const uint64_t w, uint64_t *const z, const uint64_t *const p)
 {
-	uint64_t x, y;
-	x = *z;
+	uint64_t y, x = *z;
 	*z = 0ul;
-	switch (k) { //32%/26%/21%/21%
+	switch (k) {
 		case 0x60u:
 			x = (x + (x >> 2)) & 0x3333333333333333ul;
 			*z = ((x + (x >> 4u)) & 0xf0f0f0f0f0f0f0ful);
@@ -141,7 +147,7 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 			isa = bwt->L2[c] + ((uint32_t *)p)[c];
 			p += 2 + ((_i&0x60)>>5);
 			z = *p ^ w;
-			z = z & (z >> 1) & 0x5555555555555555ul & occ_mask[_i&31];
+			z = z & (z >> 1) & occ_mask2[_i&31];
 			bwt_occ(_i & 0x60u, w, &z, p);
 			isa += (z * 0x101010101010101ul >> 56);
 		} else {
@@ -166,18 +172,19 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, uint64_t *w, bwtint_t isa
 			if (unlikely(isa > bwt->seq_len))
 				return 0u;
 			--isa;
+			//*w = occ_mask2[isa & 31];
+
 		}
 		c = bwt_B0(bwt, isa, c);
 		*w = n_mask[c];
 		c = bwt->L2[c] + ((uint32_t *)p)[c];
 		p += 2 + ((isa&0x60)>>5);
 		z = *p ^ *w;
-		z = z & (z >> 1) & 0x5555555555555555ul & occ_mask[isa&31];
+		z = z & (z >> 1) & occ_mask2[isa&31];
 		bwt_occ(isa & 0x60u, *w, &z, p);
 		 //only 0x1f1f... part in _i&31?
 		 //can we reduce this since we only really have to count the first bits?
 		isa = c + (z * 0x101010101010101ul >> 56);
-		*w = occ_mask[isa & 31];
 	} else {
 		c = bwt_B0(bwt, isa, c);
 		if (isa == bwt->seq_len)
@@ -194,10 +201,11 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 	m = bwt->sa_intv - 1;
 	if (likely(!((m+1) & m) && bwt->primary <= bwt->seq_len)) {
 		// not power of 2 before decrement
-		w = occ_mask[k & m];
+		w = occ_mask2[k & m];
 		while (w & 0x10000000ul) {
 			++sa;
 			k = cal_isa_PleSl(bwt, &w, k);
+			w = occ_mask2[k & m];
 		}
 	} else {
 		bwtint_t add = m;
@@ -262,7 +270,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	if ((k & ~0x7fu) - (n & ~0x7fu)) { //49%/50%
 		p += 2 + ((k&0x60)>>5);
 		z = *p ^ x;
-		z = z & (z >> 1) & 0x5555555555555555ul & occ_mask[k&31];
+		z = z & (z >> 1) & occ_mask2[k&31];
 		bwt_occ(k & 0x60u, x, &z, p);
 		k = *l;
 
@@ -270,7 +278,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		*l = ((uint32_t *)p)[c] + bwt->L2[c];
 		p += 2 + ((n&0x60)>>5);
 		y = *p ^ x;
-		y = y & (y >> 1) & 0x5555555555555555ul & occ_mask[n&31];
+		y = y & (y >> 1) & occ_mask2[n&31];
 		bwt_occ(n & 0x60u, x, &y, p);
 		//it appears that in this case k cannot be *l ??? more testing needed?
 	} else {
@@ -278,11 +286,11 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		// todo (?): switch ((k&0x60u) | ((n&0x60u)>>5)) {
 		p += 2 + ((n&0x60u)>>5);
 		y = *p ^ x;
-		y = y & (y >> 1) & 0x5555555555555555ul & occ_mask[n&31];
+		y = y & (y >> 1) & occ_mask2[n&31];
 
 		switch ((n&0x60u) - (k&0x60u)) { // 80%/15%/3%/1%
 			case 0u: z = *p ^ x;
-				z = z & (z >> 1) & 0x5555555555555555ul & occ_mask[k&31];
+				z = z & (z >> 1) & occ_mask2[k&31];
 
 				if (y != z) {
 					uint64_t v;
@@ -313,7 +321,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 				y = z + ((y - z) >> 2);
 
 				z = *p ^ x;
-				z = z & (z >> 1) & 0x5555555555555555ul & occ_mask[k&31];
+				z = z & (z >> 1) & occ_mask2[k&31];
 				z = (z + (z >> 2)) & 0x3333333333333333ul;
 
 				if (y != z) {
@@ -345,7 +353,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 					y += z;
 				}
 				z = *p ^ x;
-				z = z & (z >> 1) & 0x5555555555555555ul & occ_mask[k&31];
+				z = z & (z >> 1) & occ_mask2[k&31];
 				z = (z + (z >> 2)) & 0x3333333333333333ul;
 				if (y == z)
 					return -1u;
