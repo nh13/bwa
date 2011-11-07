@@ -217,20 +217,20 @@ void bwt_cal_sa(bwt_t *bwt, int intv)
 // an analogy to bwt_occ() but more efficient, requiring k <= l
 inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 {
-	uint64_t y, z, w;
-	const uint64_t x = n_mask[c];
+	uint64_t y, z, x;
 	const uint64_t *p;
 	bwtint_t n;
 	if (unlikely(k == 0u)) {
 		*l = bwt->L2[c+1];
-		return bwt->L2[c] + 1;
+		k = bwt->L2[c] + 1;
+		goto out;
 	}
 	--k;
 	k = (k >= bwt->primary)? k-1 : k;
 	n = (*l >= bwt->primary)? *l-1 : *l;
 	p = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
-	w = 0ul;
+	x = n_mask[c];
 	if ((k & ~0x7fu) - (n & ~0x7fu)) { //49%/50%
 		p += 2 + ((k&0x60)>>5);
 		z = *p ^ x;
@@ -250,96 +250,114 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		// todo (?): switch ((k&0x60u) | ((n&0x60u)>>5)) {
 		p += 2 + ((n&0x60u)>>5);
 		y = *p ^ x;
-		y = y & (y >> 1) & occ_mask2[n&31];
+		y = y & (y >> 1);
 
+		uint64_t v, w;
+		v = w = 0ul;
 		switch ((n&0x60u) - (k&0x60u)) { // 80%/15%/3%/1%
-			case 0u: z = *p ^ x;
-				z = z & (z >> 1) & occ_mask2[k&31];
+			case 0u: z = y & occ_mask2[k&31];
+				y &= occ_mask2[n&31];
 
 				if (y != z) {
-					uint64_t v;
 					switch (k&0x60u) { // 25%/25%/25%/25%
-						case 0x60u:
-						case 0x40u: v = *(--p) ^ x;
-							w = v & (v >> 1) &
+						case 0x60u: w = *(p - 3) ^ x;
+							w = (w >> 1) & w;
+							w = (w & 0x1111111111111111ul) +
+							(w >> 2 & 0x1111111111111111ul);
+							w = (w + (w >> 4u)) &
+								0xf0f0f0f0f0f0f0ful;
+						case 0x40u: v = *(p - 2) ^ x;
+							v = v & (v >> 1) &
 								0x5555555555555555ul;
-						case 0x20u:v = *(--p) ^ x;
-							v = w + (v & (v >> 1) &
-								0x5555555555555555ul);
+						case 0x20u:x = *(p - 1) ^ x;
+							v += x & (x >> 1) &
+								0x5555555555555555ul;
 							z += v;
 							y += v;
 					}
 					v = z & 0x3333333333333333ul;
 					z = v + ((z - v) >> 2);
+					z = w + ((z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 					v = y & 0x3333333333333333ul;
 					y = v + ((y - v) >> 2);
-
-					y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+					y = w + ((y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 				} else {
-					return -1u;
+					k = -1u;
+					goto out;
 				}
 				break;
-			case 32u:z = *(--p) ^ x;
-				y += (z & (z >> 1) & 0x5555555555555555ul);
-				z = y & 0x3333333333333333ul;
-				y = z + ((y - z) >> 2);
-
-				z = *p ^ x;
-				z = z & (z >> 1) & occ_mask2[k&31];
+			case 32u:y &= occ_mask2[n&31];
+				z = *(--p) ^ x;
+				z = z & (z >> 1);
+				y += z & 0x5555555555555555ul;
+				z &= occ_mask2[k&31];
 				z = (z + (z >> 2)) & 0x3333333333333333ul;
+				v = y & 0x3333333333333333ul;
+				y = v + ((y - v) >> 2);
+
 
 				if (y != z) {
 					switch (k&0x60u) {
-						case 0x40u:
-						case 0x20u: w = *(--p) ^ x;
+						case 0x40u: w = *(p - 2) ^ x;
 							w = (w >> 1) & w;
 							w = (w & 0x1111111111111111ul) +
-								(w >> 2 & 0x1111111111111111ul);
-							z += w;
-							y += w;
+							(w >> 2 & 0x1111111111111111ul);
+							w = (w + (w >> 4u)) &
+								0xf0f0f0f0f0f0f0ful;
+						case 0x20u: v = *(p - 1) ^ x;
+							v = (v >> 1) & v;
+							v = (v & 0x1111111111111111ul) +
+							(v >> 2 & 0x1111111111111111ul);
+							z += v;
+							y += v;
 					}
-					y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+					z = w + ((z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful);
+					y = w + ((y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 				} else {
-					return -1u;
+					k = -1u;
+					goto out;
 				}
 				break;
-			default: z = *(--p) ^ x;
+			default:y &= occ_mask2[n&31];
+				p -= 2;
+				z = *(p+1) ^ x;
 				y += z & (z >> 1) & 0x5555555555555555ul;
-				z = *(--p) ^ x;
-				y += z & (z >> 1) & 0x5555555555555555ul;
-
-				z = y & 0x3333333333333333ul;
-				y = z + ((y - z) >> 2);
-				y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
-
-				if ((n&0x60u) == 96u && (k&0x60u) == 0u) {
-					z = *(--p) ^ x;
-					z = (z >> 1) & z;
-					z = (z & 0x1111111111111111ul) +
-						(z >> 2 & 0x1111111111111111ul);
-					z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
-					y += z;
-				}
 				z = *p ^ x;
-				z = z & (z >> 1) & occ_mask2[k&31];
+				z = z & (z >> 1);
+				y += z & 0x5555555555555555ul;
+
+				v = y & 0x3333333333333333ul;
+				y = v + ((y - v) >> 2);
+				y = (y + (y >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				if ((n&0x60u) == 0x60u) {
+					x = *(p-1) ^ x;
+					v = (x >> 1) & x;
+					x = (v & 0x1111111111111111ul) +
+						(v >> 2 & 0x1111111111111111ul);
+					x = (x + (x >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+					if (k&0x60u) {
+						w = x;
+					} else {
+						y += x;
+						z = v;
+					}
+				}
+				z &= occ_mask2[k&31];
 				z = (z + (z >> 2)) & 0x3333333333333333ul;
-				if (y == z)
-					return -1u;
-		}
-		z = ((z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful);
-		if ((n&0x60u) == 0x60u && (k&0x60u)) {
-			w = *(--p) ^ x;
-			w = (w >> 1) & w;
-			w = (w & 0x1111111111111111ul) +
-				(w >> 2 & 0x1111111111111111ul);
-			w = (w + (w >> 4u)) & 0xf0f0f0f0f0f0f0ful;
-			z += w;
-			y += w;
+				z = (z + (z >> 4u)) & 0xf0f0f0f0f0f0f0ful;
+				if (y != z) {
+					y += w;
+					z += w;
+				} else {
+					k = -1u;
+					goto out;
+				}
 		}
 		k = *l;
 	}
 	k += (z * 0x101010101010101ul >> 56) + 1;
 	*l += y * 0x101010101010101ul >> 56;
+out:
 	return k;
 }
 
