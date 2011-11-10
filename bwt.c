@@ -83,7 +83,8 @@ static inline void bwt_occ(const bwtint_t k, const uint64_t w, uint64_t *const z
 	*z = 0ul;
 	switch (k) {
 		case 0x60u:
-			x = (x + (x >> 2)) & 0x3333333333333333ul;
+			x = (x & 0x1111111111111111ul) +
+				(x >> 2 & 0x1111111111111111ul);
 			*z = ((x + (x >> 4u)) & 0xf0f0f0f0f0f0f0ful);
 			x = *(p-3) ^ w;
 			x = x & (x >> 1) & 0x5555555555555555ul;
@@ -91,7 +92,7 @@ static inline void bwt_occ(const bwtint_t k, const uint64_t w, uint64_t *const z
 			 x += y & (y >> 1) & 0x5555555555555555ul;
 		case 0x20u:y = *(p-1) ^ w;
 			x += y & (y >> 1) & 0x5555555555555555ul;
-	}
+	} /* TODO: try returning x as *w*/
 	y = x & 0x3333333333333333ul;
 	x = y + ((x - y) >> 2);
 	*z += ((x + (x >> 4u)) & 0xf0f0f0f0f0f0f0ful);
@@ -220,14 +221,18 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	uint64_t y, z, x;
 	const uint64_t *p;
 	bwtint_t n;
-	if (unlikely(k == 0u)) {
-		*l = bwt->L2[c+1];
-		k = bwt->L2[c] + 1;
-		goto out;
+	n = *l;
+	if (n >= bwt->primary) {
+		--n;
+		if (k > bwt->primary) {
+			--k;
+		} else if (k == 0u) { // z of previous == 1ul
+			*l = bwt->L2[c+1];
+			k = bwt->L2[c] + 1;
+			goto out;
+		}
 	}
 	--k;
-	k = (k >= bwt->primary)? k-1 : k;
-	n = (*l >= bwt->primary)? *l-1 : *l;
 	p = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
 	x = n_mask[c];
