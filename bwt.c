@@ -265,18 +265,19 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		// jump to the end of the last BWT cell
 		// todo (?): switch ((k&0x60u) | ((n&0x60u)>>5)) {
 		register uint64_t v;
-		uint64_t w;
+		uint64_t w = occ_mask2[n&31];
+		z = occ_mask2[k&31];
 		p += 2 + ((n&0x60u)>>5);
 		y = *p ^ x;
-		y &= (y >> 1) & occ_mask2[n&31];
+		y &= (y >> 1) & w;
 		v = w = 0ul;
-		switch (((n&0x60u) - (k&0x60u)) | ((k&0x60u) >> 5)) { // 80%/15%/3%/1%
+		switch (((n&0x60u) - (k&0x60u)) | ((n&0x60u) >> 5)) {
 		case 0x3u: w = *(p - 3) ^ x;
 		case 0x2u: v = *(p - 2) ^ x;
 			v &= (v >> 1) & 0x5555555555555555ul;
-		case 0x1u: z = *(p - 1) ^ x;
-			v += z & (z >> 1) & 0x5555555555555555ul;
-		case 0x0u: z = y & ~occ_mask2[k&31];
+		case 0x1u: x = *(p - 1) ^ x;
+			v += x & (x >> 1) & 0x5555555555555555ul;
+		case 0x0u: z = y & (z ^ 0x5555555555555555ul);
 			if (z == 0ul) {
 				k = -1u;
 				goto out;
@@ -295,16 +296,16 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			}
 			v = w;
 			break;
-		case 0x22u:w = *(p - 3) ^ x;
-		case 0x21u:v = *(p - 2) ^ x;
+		case 0x23u:w = *(p - 3) ^ x;
+		case 0x22u:v = *(p - 2) ^ x;
 			v &= (v >> 1) & 0x5555555555555555ul;
 			v = (v + (v >> 2)) & 0x3333333333333333ul;
-		case 0x20u: z = *(p-1) ^ x;
-			z &= (z >> 1) & 0x5555555555555555ul;
-			y += z;
+		case 0x21u: x = *(p-1) ^ x;
+			x &= (x >> 1) & 0x5555555555555555ul;
+			y += x;
+			z &= x;
 			x = y & 0x3333333333333333ul;
 			y = x + ((y - x) >> 2);
-			z &= occ_mask2[k&31];
 			z = (z + (z >> 2)) & 0x3333333333333333ul;
 			if (y == z) {
 				k = -1u;
@@ -319,14 +320,14 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			}
 			v = w;
 			break;
-		case 0x41u:w = *(p-3) ^ x;
-		case 0x40u: z = *(p-2) ^ x;
-			z &= (z >> 1) & 0x5555555555555555ul;
-			v = *(p-1) ^ x;
+		case 0x43u:w = *(p-3) ^ x;
+		case 0x42u: v = *(p-2) ^ x;
+			x = *(p-1) ^ x;
+			x &= (x >> 1) & 0x5555555555555555ul;
 			v &= (v >> 1) & 0x5555555555555555ul;
-			y += v + z;
+			y += x + v;
 
-			z &= occ_mask2[k&31];
+			z &= v;
 			z = (z + (z >> 2)) & 0x3333333333333333ul;
 
 			v = y & 0x3333333333333333ul;
@@ -342,26 +343,26 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			}
 			v = w;
 			break;
-		default /*case 0x60u*/: z = *(p-2) ^ x;
-			z &= (z >> 1) & 0x5555555555555555ul;
-			v = *(p-1) ^ x;
+		default: /*case 0x60u*/
+			w = *(p-3) ^ x;
+			v = *(p-2) ^ x;
+			x = *(p-1) ^ x;
+			x &= (x >> 1) & 0x5555555555555555ul;
 			v &= (v >> 1) & 0x5555555555555555ul;
-			y += v + z;
-
+			w &= (w >> 1) & 0x5555555555555555ul;
+			z &= w;
+			y += x + v;
+			w = (w + (w >> 2)) & 0x3333333333333333ul;
+			z = (z + (z >> 2)) & 0x3333333333333333ul;
 			v = y & 0x3333333333333333ul;
 			y = v + ((y - v) >> 2);
 
-			v = *(p-3) ^ x;
-			z = v & (v >> 1) & 0x5555555555555555ul;
-			v = (z + (z >> 2)) & 0x3333333333333333ul;
-			z &= occ_mask2[k&31];
-			z = (z + (z >> 2)) & 0x3333333333333333ul;
-			if (y + v == z) {
+			if (y + w == z) {
 				k = -1u;
 				goto out;
 			}
-			v = (v + (v >> 4)) & 0xf0f0f0f0f0f0f0ful;
-			w = (w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful;
+			v = (w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful;
+			w = 0ul;
 			break;
 
 		}
