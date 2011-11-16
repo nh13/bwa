@@ -173,12 +173,16 @@ bwa_seq_t *bwa_read_seq(bwa_seqio_t *bs, int n_needed, int *n, int mode, int tri
 		if (s != NULL) { // mark reads that fail Casava 1.8+ quality checks
 			if (*s == 'Y')
 				p->extra_flag |= SAM_FQF;
-		} else if (seq->seq.l > 2) {
+		} else if (i > 2) {
 			s = &seq->name.s[i-1];
 			if (s[-1] == '/' && (s[0] == '1' || s[0] == '2'))
 				i -= 2; // trim /[12]
 		}
-		p->name = strndup((const char*)seq->name.s, i);
+		p->name = malloc(sizeof(char) * (i + 1));
+		p->name[i] = '\0';
+		while (i--)
+			p->name[i] = seq->name.s[i];
+
 		if (l_bc) { // then trim barcode
 			for (i = 0; i < l_bc; ++i)
 				p->bc[i] = (seq->qual.l && seq->qual.s[i]-33 < BARCODE_LOW_QUAL)? tolower(seq->seq.s[i]) : toupper(seq->seq.s[i]);
