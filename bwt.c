@@ -242,8 +242,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		}
 		--*l;
 	}
-	register uint64_t y, z;
-	uint64_t x;
+	uint64_t v, w, x, y, z;
 	const uint64_t *p;
 	bwtint_t n = *l;
 
@@ -252,7 +251,6 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
 	x = n_mask[c];
 
-	uint64_t v, w;
 	v = w = 0ul;
 	p += 2 + ((n&0x60u)>>5);
 	y = *p ^ x;
@@ -360,7 +358,6 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			y += w & (w >> 1) & 0x5555555555555555ul;
 		case 0x20u:w = *(p-1) ^ x;
 			y += w & (w >> 1) & 0x5555555555555555ul;
-		/* todo no subtraction could take place here? */
 			w = y & 0x3333333333333333ul;
 			y = w + ((y - w) >> 2);
 		}
@@ -386,7 +383,6 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			}
 		case 0x20u: x = *(p-1) ^ x;
 			z += x & (x >> 1) & 0x5555555555555555ul;
-		/* todo no subtraction could take place here? */
 			x = z & 0x3333333333333333ul;
 			z = x + ((z - x) >> 2);
 		}
