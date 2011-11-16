@@ -343,10 +343,63 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		w = 0ul;
 		k = *l;
 		break;
-	default:
-		switch (n&0x60) {
-		case 0x0u:
+	/* from here on were originally in other branch */
+	default: {
+		const uint64_t *p2 = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
+		n = (n & 0x60u) | ((k & 0x60u) >> 5);
+		k = ((uint32_t *)p2)[c] + bwt->L2[c];
+		p2 += 2 + (n & 0x3u); //is really k
+
+		w = *p2 ^ x;
+		z &= w & (w >> 1);
+		w = 0ul;
+		switch (n) {
+		case 0x63:
 			y = (y + (y >> 2)) & 0x3333333333333333ul;
+			v = (y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful; /* v set */
+			y = *(p-3) ^ x;
+			y &= (y >> 1) & 0x5555555555555555ul;
+		case 0x43u:
+			w = *(p-2) ^ x;
+			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x23u:
+			w = *(p-1) ^ x;
+			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x03u:
+			w = *(p2-3) ^ x;
+			z += w & (w >> 1) & 0x5555555555555555ul;
+			w = *(p2-2) ^ x;
+			z += w & (w >> 1) & 0x5555555555555555ul;
+			x = *(p2-1) ^ x;
+			x &= (x >> 1) & 0x5555555555555555ul;
+			x = (x + (x >> 2)) & 0x3333333333333333ul;
+			w = (x + (x >> 4)) & 0xf0f0f0f0f0f0f0ful; /* w set */
+			x = z & 0x3333333333333333ul;
+			z = x + ((z - x) >> 2);
+			x = y & 0x3333333333333333ul;
+			y = x + ((y - x) >> 2);
+			break;
+		case 0x62:
+			y = (y + (y >> 2)) & 0x3333333333333333ul;
+			v = (y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful; /* v set */
+			y = *(p-3) ^ x;
+			y &= (y >> 1) & 0x5555555555555555ul;
+		case 0x42u:
+			w = *(p-2) ^ x;
+			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x22u:
+			w = *(p-1) ^ x;
+			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x02u:
+			w = *(p2-2) ^ x;
+			z += w & (w >> 1) & 0x5555555555555555ul;
+			w = 0ul;
+			x = *(p2-1) ^ x;
+			z += x & (x >> 1) & 0x5555555555555555ul;
+			x = z & 0x3333333333333333ul;
+			z = x + ((z - x) >> 2);
+			x = y & 0x3333333333333333ul;
+			y = x + ((y - x) >> 2);
 			break;
 		case 0x60u:
 			y = (y + (y >> 2)) & 0x3333333333333333ul;
@@ -356,38 +409,36 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		case 0x40u:
 			w = *(p-2) ^ x;
 			y += w & (w >> 1) & 0x5555555555555555ul;
-		case 0x20u:w = *(p-1) ^ x;
-			y += w & (w >> 1) & 0x5555555555555555ul;
-			w = y & 0x3333333333333333ul;
-			y = w + ((y - w) >> 2);
-		}
-		p = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
-		n = ((uint32_t *)p)[c] + bwt->L2[c];
-		p += 2 + ((k&0x60)>>5);
-		w = *p ^ x;
-		z &= w & (w >> 1);
-		w = 0ul;
-		switch (k&0x60) {
-		case 0x0u:
+			w = 0ul;
+		case 0x20u:x = *(p-1) ^ x;
+			y += x & (x >> 1) & 0x5555555555555555ul;
+		case 0x00u:
 			z = (z + (z >> 2)) & 0x3333333333333333ul;
+			x = y & 0x3333333333333333ul;
+			y = x + ((y - x) >> 2);
 			break;
-		case 0x60u:
-			z = (z + (z >> 2)) & 0x3333333333333333ul;
-			w = (z + (z >> 4)) & 0xf0f0f0f0f0f0f0ful; /* w set */
-			z = *(p-3) ^ x;
-			z &= (z >> 1) & 0x5555555555555555ul;
-		case 0x40u: {
-			uint64_t t;
-			t = *(p-2) ^ x;
-			z += t & (t >> 1) & 0x5555555555555555ul;
-			}
-		case 0x20u: x = *(p-1) ^ x;
+		case 0x61u:
+			y = (y + (y >> 2)) & 0x3333333333333333ul;
+			v = (y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful; /* v set */
+			y = *(p-3) ^ x;
+			y &= (y >> 1) & 0x5555555555555555ul;
+		case 0x41u:
+			w = *(p-2) ^ x;
+			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x21u:
+			w = *(p-1) ^ x;
+			y += w & (w >> 1) & 0x5555555555555555ul;
+			w = 0ul;
+		case 0x01u:
+			x = *(p2-1) ^ x;
 			z += x & (x >> 1) & 0x5555555555555555ul;
 			x = z & 0x3333333333333333ul;
 			z = x + ((z - x) >> 2);
+			x = y & 0x3333333333333333ul;
+			y = x + ((y - x) >> 2);
+			break;
 		}
-		k = n;
-		break;
+		}
 	}
 	y = v + ((y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful);
 	z = w + ((z + (z >> 4)) & 0xf0f0f0f0f0f0f0ful);
