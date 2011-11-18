@@ -280,10 +280,11 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	case 0x23u:w = *(p - 3) ^ x;
 		w &= (w >> 1) & 0x5555555555555555ul;
 		w = (w + (w >> 2)) & 0x3333333333333333ul;
-		w = (w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful;
 	case 0x22u:v = *(p - 2) ^ x;
 		v &= (v >> 1) & 0x5555555555555555ul;
-		v = (v + (v >> 2)) & 0x3333333333333333ul;
+		w += (v + (v >> 2)) & 0x3333333333333333ul;
+		w = (w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful;
+		v = w;
 	case 0x21u: x = *(p-1) ^ x;
 		x &= (x >> 1) & 0x5555555555555555ul;
 		z &= x;
@@ -295,9 +296,6 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			k = -1u;
 			goto out;
 		}
-		z += v;
-		y += v;
-		v = w;
 		k = *l;
 		break;
 	default: {
