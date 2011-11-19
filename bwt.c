@@ -93,7 +93,7 @@ static inline int __occ_aux(uint64_t y)
 
 #define nucleo_5mask(w) 	(w & (w >> 1) & 0x5555555555555555ul)
 #define nucleo_3mask(w)		((w + (w >> 2)) & 0x3333333333333333ul)
-#define nucleo_f0mask(w)	((w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful)
+#define nucleo_f0mask(w)	((w + (w >> 4)) & 0x0f0f0f0f0f0f0f0ful)
 
 #define nucleo_upto5mask(p, x, w) ({		\
 	w = *(p) ^ (x);				\
@@ -108,6 +108,19 @@ static inline int __occ_aux(uint64_t y)
 #define nucleo_uptof0mask(p, x, w) ({		\
 	w = nucleo_upto3mask(p, x, w);		\
 	nucleo_f0mask(w);			\
+})
+
+
+#define nucleo_pre_combine_3mask(v, w) ({	\
+	v = w;					\
+	w &= 0x3333333333333333ul;		\
+})
+
+// doesn't work?
+#define nucleo_pre_combine_f0mask(v, w) ({	\
+	v = w;					\
+	w &= 0x0f0f0f0f0f0f0f0ful;		\
+	w ^ v;					\
 })
 
 #define nucleo_combine_3mask(v, w) ({		\
@@ -270,7 +283,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	--k;
 	p = (const uint64_t *)bwt->bwt + n/OCC_INTERVAL * 6;
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
-	const uint64_t x = (c == 1 ? 0xaaaaaaaaaaaaaaaaul :
+	uint64_t x = (c == 1 ? 0xaaaaaaaaaaaaaaaaul :
 		(c == 2 ? 0x5555555555555555ul :
 		(c == 3 ? 0x0ul : 0xfffffffffffffffful)));
 
@@ -283,7 +296,8 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	case 0x3u: w = nucleo_upto5mask(p - 3, x, v);
 	case 0x2u: w += nucleo_upto5mask(p - 2, x, v);
 	case 0x1u: w += nucleo_upto5mask(p - 1, x, v);
-		w = nucleo_combine_3mask(v, w);
+		v ^= nucleo_pre_combine_3mask(v, w);
+		w += (v >> 2);
 	case 0x0u: z &= y;
 		if (y == z) {
 			k = -1u;
@@ -295,12 +309,14 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		break;
 	case 0x23u:w = nucleo_upto5mask(p - 3, x, v);
 	case 0x22u:w += nucleo_upto5mask(p - 2, x, v);
-		w = nucleo_combine_3mask(v, w);
+		v ^= nucleo_pre_combine_3mask(v, w);
+		w += (v >> 2);
 	case 0x21u: v = nucleo_upto5mask(p - 1, x, v);
 		y += v;
 		v &= z;
 		z = nucleo_3mask(v);
-		y = nucleo_combine_3mask(v, y);
+		v ^= nucleo_pre_combine_3mask(v, y);
+		y += (v >> 2);
 		if (y == z) {
 			k = -1u;
 			goto out;
@@ -320,17 +336,19 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		case 0x63: w = nucleo_upto5mask(p - 3, x, v);
 		case 0x43u: w += nucleo_upto5mask(p - 2, x, v);
 		case 0x23u: w += nucleo_upto5mask(p - 1, x, v);
-			w = nucleo_combine_3mask(v, w);
+			v ^= nucleo_pre_combine_3mask(v, w);
+			w += (v >> 2);
 		case 0x03u: z += nucleo_upto5mask(p2 - 3, x, v);
 			z += nucleo_upto5mask(p2 - 2, x, v);
-			z = nucleo_combine_3mask(v, z);
-			v = nucleo_upto5mask(p2 - 1, x, v);
-			z += nucleo_3mask(v);
+			x = nucleo_upto5mask(p2 - 1, x, x);
+			v ^= nucleo_pre_combine_3mask(v, z);
+			z += (v >> 2) + nucleo_3mask(x);
 			break;
 		case 0x60u: w = nucleo_upto5mask(p - 3, x, v);
 		case 0x40u: w += nucleo_upto5mask(p - 2, x, v);
 		case 0x20u: w += nucleo_upto5mask(p - 1, x, v);
-			w = nucleo_combine_3mask(v, w);
+			v ^= nucleo_pre_combine_3mask(v, w);
+			w += (v >> 2);
 		case 0x00u: z = nucleo_3mask(z);
 			break;
 		default:
@@ -338,20 +356,25 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 			case 0x62: w = nucleo_upto5mask(p - 3, x, v);
 			case 0x42u: w += nucleo_upto5mask(p - 2, x, v);
 			case 0x22u: w += nucleo_upto5mask(p - 1, x, v);
-				w = nucleo_combine_3mask(v, w);
+				v ^= nucleo_pre_combine_3mask(v, w);
+				w += (v >> 2);
 			case 0x02u: z += nucleo_upto5mask(p2 - 2, x, v);
 				break;
 			case 0x61u: w = nucleo_upto5mask(p - 3, x, v);
 			case 0x41u: w += nucleo_upto5mask(p - 2, x, v);
 			case 0x21u: w += nucleo_upto5mask(p - 1, x, v);
-				w = nucleo_combine_3mask(v, w);
+				v ^= nucleo_pre_combine_3mask(v, w);
+				w += (v >> 2);
 			}
 			z += nucleo_upto5mask(p2 - 1, x, v);
-			z = nucleo_combine_3mask(v, z);
+			v ^= nucleo_pre_combine_3mask(v, z);
+			z += (v >> 2);
 		}
 		y = nucleo_3mask(y);
 	}
 	y += w;
+	//w = nucleo_pre_combine_f0mask(w, z);
+	//z += (w >> 2); //werkt niet ?!
 	z = nucleo_combine_f0mask(w, z);
 	y = nucleo_combine_f0mask(v, y);
 	k += (z * 0x101010101010101ul >> 56) + 1;
