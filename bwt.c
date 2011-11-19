@@ -91,6 +91,30 @@ static inline int __occ_aux(uint64_t y)
 	return ((y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful) * 0x101010101010101ul >> 56;
 }
 
+#define nucleo_5mask(w) 	(w & (w >> 1) & 0x5555555555555555ul)
+#define nucleo_3mask(w)		((w + (w >> 2)) & 0x3333333333333333ul)
+#define nucleo_f0mask(w)	((w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful)
+
+#define nucleo_upto5mask(p, x, w) ({		\
+	w = *(p) ^ (x);				\
+	nucleo_5mask(w);			\
+})
+
+#define nucleo_upto3mask(p, x, w) ({		\
+	w = nucleo_upto5mask(p, x, w);		\
+	nucleo_3mask(w);			\
+})
+
+#define nucleo_uptof0mask(p, x, w) ({		\
+	w = nucleo_upto3mask(p, x, w);		\
+	nucleo_f0mask(w);			\
+})
+
+#define nucleo_combine_3mask(x, v) ({		\
+	x = v & 0x3333333333333333ul;		\
+	x + ((v - x) >> 2);			\
+})
+
 static inline uint64_t bwt_occ(const bwtint_t k, const uint64_t w, const uint64_t *const p)
 {
 	uint64_t z = 0ul;
@@ -249,7 +273,17 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	--k;
 	p = (const uint64_t *)bwt->bwt + n/OCC_INTERVAL * 6;
 	*l = ((uint32_t *)p)[c] + bwt->L2[c];
-	x = n_mask[c];
+	switch (c) {
+		case 1: x = 0xaaaaaaaaaaaaaaaaul;
+			break;
+		case 2: x = 0x5555555555555555ul;
+			break;
+		case 3: x = 0ul;
+			break;
+		default:
+			x = 0xfffffffffffffffful;
+	}
+	//x = n_mask[c];
 
 	v = w = 0ul;
 	p += 2 + ((n&0x60u)>>5);
@@ -257,41 +291,29 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	y &= (y >> 1) & occ_mask2[n&31];
 	z = occ_mask2[k&31];
 	switch (((n&~31u) - (k&~31u)) | ((n&0x60u) >> 5)) {
-	case 0x3u: w = *(p - 3) ^ x;
-		w &= (w >> 1) & 0x5555555555555555ul;
-		w = (w + (w >> 2)) & 0x3333333333333333ul;
-	case 0x2u: v = *(p - 2) ^ x;
-		v &= (v >> 1) & 0x5555555555555555ul;
-	case 0x1u: x = *(p - 1) ^ x;
-		v += x & (x >> 1) & 0x5555555555555555ul;
-		x = v & 0x3333333333333333ul;
-		w += x + ((v - x) >> 2);
-		w = (w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful;
-		v = w;
+	case 0x3u: w = nucleo_upto3mask(p - 3, x, w);
+	case 0x2u: v = nucleo_upto5mask(p - 2, x, v);
+	case 0x1u: v += nucleo_upto5mask(p - 1, x, x);
+		w += nucleo_combine_3mask(x, v);
+		v = w = nucleo_f0mask(w);
 	case 0x0u: z &= y;
 		if (y == z) {
 			k = -1u;
 			goto out;
 		}
-		y = (y + (y >> 2)) & 0x3333333333333333ul;
-		z = (z + (z >> 2)) & 0x3333333333333333ul;
+		y = nucleo_3mask(y);
+		z = nucleo_3mask(z);
 		k = *l;
 		break;
-	case 0x23u:w = *(p - 3) ^ x;
-		w &= (w >> 1) & 0x5555555555555555ul;
-		w = (w + (w >> 2)) & 0x3333333333333333ul;
-	case 0x22u:v = *(p - 2) ^ x;
-		v &= (v >> 1) & 0x5555555555555555ul;
-		w += (v + (v >> 2)) & 0x3333333333333333ul;
-		w = (w + (w >> 4)) & 0xf0f0f0f0f0f0f0ful;
-		v = w;
-	case 0x21u: x = *(p-1) ^ x;
-		x &= (x >> 1) & 0x5555555555555555ul;
+	case 0x23u:w = nucleo_upto3mask(p - 3, x, w);
+	case 0x22u:v = nucleo_upto5mask(p - 2, x, v);
+		w += nucleo_3mask(v);
+		v = w = nucleo_f0mask(w);
+	case 0x21u: x = nucleo_upto5mask(p - 1, x, x);
 		z &= x;
-		z = (z + (z >> 2)) & 0x3333333333333333ul;
+		z = nucleo_3mask(z);
 		y += x;
-		x = y & 0x3333333333333333ul;
-		y = x + ((y - x) >> 2);
+		y = nucleo_combine_3mask(x, y);
 		if (y == z) {
 			k = -1u;
 			goto out;
@@ -308,90 +330,45 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		z &= w & (w >> 1);
 		w = 0ul;
 		switch (n) {
-		case 0x63:
-			v = *(p-3) ^ x;
-			v &= (v >> 1) & 0x5555555555555555ul;
-			v = (v + (v >> 2)) & 0x3333333333333333ul;
-			v = (v + (v >> 4)) & 0xf0f0f0f0f0f0f0ful;
-		case 0x43u:
-			w = *(p-2) ^ x;
-			y += w & (w >> 1) & 0x5555555555555555ul;
-		case 0x23u:
-			w = *(p-1) ^ x;
-			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x63: v = nucleo_uptof0mask(p - 3, x, v);
+		case 0x43u: y += nucleo_upto5mask(p - 2, x, w);
+		case 0x23u: y += nucleo_upto5mask(p - 1, x, w);
 		case 0x03u:
-			w = *(p2-3) ^ x;
-			z += w & (w >> 1) & 0x5555555555555555ul;
-			w = *(p2-2) ^ x;
-			z += w & (w >> 1) & 0x5555555555555555ul;
-			x = *(p2-1) ^ x;
-			x &= (x >> 1) & 0x5555555555555555ul;
-			x = (x + (x >> 2)) & 0x3333333333333333ul;
-			w = (x + (x >> 4)) & 0xf0f0f0f0f0f0f0ful; /* w set */
-			x = z & 0x3333333333333333ul;
-			z = x + ((z - x) >> 2);
+			z += nucleo_upto5mask(p2 - 3, x, w);
+			z += nucleo_upto5mask(p2 - 2, x, w);
+			w = nucleo_uptof0mask(p2 - 1, x, w); /* w set */
+			z = nucleo_combine_3mask(x, z);
 			break;
-		case 0x60u:
-			v = *(p-3) ^ x;
-			v &= (v >> 1) & 0x5555555555555555ul;
-			v = (v + (v >> 2)) & 0x3333333333333333ul;
-			v = (v + (v >> 4)) & 0xf0f0f0f0f0f0f0ful;
-		case 0x40u:
-			w = *(p-2) ^ x;
-			y += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x60u: v = nucleo_uptof0mask(p - 3, x, v);
+		case 0x40u: y += nucleo_upto5mask(p - 2, x, w);
 			w = 0ul;
-		case 0x20u:x = *(p-1) ^ x;
-			y += x & (x >> 1) & 0x5555555555555555ul;
-		case 0x00u:
-			z = (z + (z >> 2)) & 0x3333333333333333ul;
+		case 0x20u: y += nucleo_upto5mask(p - 1, x, x);
+		case 0x00u: z =  nucleo_3mask(z);
 			break;
-		case 0x62:
-			v = *(p-3) ^ x;
-			v &= (v >> 1) & 0x5555555555555555ul;
-			v = (v + (v >> 2)) & 0x3333333333333333ul;
-			v = (v + (v >> 4)) & 0xf0f0f0f0f0f0f0ful;
-		case 0x42u:
-			w = *(p-2) ^ x;
-			y += w & (w >> 1) & 0x5555555555555555ul;
-		case 0x22u:
-			w = *(p-1) ^ x;
-			y += w & (w >> 1) & 0x5555555555555555ul;
-		case 0x02u:
-			w = *(p2-2) ^ x;
-			z += w & (w >> 1) & 0x5555555555555555ul;
+		case 0x62: v = nucleo_uptof0mask(p - 3, x, v);
+		case 0x42u: y += nucleo_upto5mask(p - 2, x, w);
+		case 0x22u: y += nucleo_upto5mask(p - 1, x, w);
+		case 0x02u: z += nucleo_upto5mask(p2 - 2, x, w);
 			w = 0ul;
-			x = *(p2-1) ^ x;
-			z += x & (x >> 1) & 0x5555555555555555ul;
-			x = z & 0x3333333333333333ul;
-			z = x + ((z - x) >> 2);
+			z += nucleo_upto5mask(p2 - 1, x, x);
+			z = nucleo_combine_3mask(x, z);
 			break;
 		default:
 			switch (n) {
-			case 0x61u:
-				v = *(p-3) ^ x;
-				v &= (v >> 1) & 0x5555555555555555ul;
-				v = (v + (v >> 2)) & 0x3333333333333333ul;
-				v = (v + (v >> 4)) & 0xf0f0f0f0f0f0f0ful;
-			case 0x41u:
-				w = *(p-2) ^ x;
-				y += w & (w >> 1) & 0x5555555555555555ul;
-			case 0x21u:
-				w = *(p-1) ^ x;
-				y += w & (w >> 1) & 0x5555555555555555ul;
+			case 0x61u: v = nucleo_uptof0mask(p - 3, x, v);
+			case 0x41u: y += nucleo_upto5mask(p - 2, x, w);
+			case 0x21u: y += nucleo_upto5mask(p - 1, x, w);
 				w = 0ul;
 			}
-			x = *(p2-1) ^ x;
-			z += x & (x >> 1) & 0x5555555555555555ul;
-			x = z & 0x3333333333333333ul;
-			z = x + ((z - x) >> 2);
+			z += nucleo_upto5mask(p2 - 1, x, x);
+			z = nucleo_combine_3mask(x, z);
 		}
-		x = y & 0x3333333333333333ul;
-		y = x + ((y - x) >> 2);
+		y = nucleo_combine_3mask(x, y);
 	}
-	y = v + ((y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful);
-	z = w + ((z + (z >> 4)) & 0xf0f0f0f0f0f0f0ful);
-	k += (z * 0x101010101010101ul >> 56) + 1;
-	*l += y * 0x101010101010101ul >> 56;
+	v += nucleo_f0mask(y);
+	w += nucleo_f0mask(z);
+	k += (w * 0x101010101010101ul >> 56) + 1;
+	*l += v * 0x101010101010101ul >> 56;
 out:
 	return k;
 }
