@@ -145,7 +145,7 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 		bwtint_t c, _i, so;
 		_i = (isa < bwt->primary) ? isa : isa - 1;
 		so = _i/OCC_INTERVAL;
-		c = bwt_B0(bwt, _i, so);
+		c = bwt_B0(bwt, _i);
 		if (likely(isa < bwt->seq_len)) {
 			uint64_t w;
 			const uint64_t *p = (const uint64_t *)bwt->bwt + so * 6;
@@ -178,7 +178,7 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 			--isa;
 
 		}
-		c = bwt_B0(bwt, isa, c);
+		c = bwt_B0(bwt, isa);
 		w = n_mask[c];
 		c = bwt->L2[c] + ((uint32_t *)p)[c];
 		p += 2 + ((isa&0x60)>>5);
@@ -187,7 +187,7 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 		 //only 0x1f1f... part in _i&31?
 		 //can we reduce this since we only really have to count the first bits?
 	} else {
-		c = bwt_B0(bwt, isa, c);
+		c = bwt_B0(bwt, isa);
 		if (isa == bwt->seq_len)
 			++c;
 		isa = bwt->L2[c];
