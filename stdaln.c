@@ -249,9 +249,8 @@ void aln_free_AlnAln(AlnAln *aa)
 /***************************/
 /* START OF common_align.c */
 /***************************/
-
-#define LOCAL_OVERFLOW_THRESHOLD 0x8000
-#define LOCAL_OVERFLOW_REDUCE 0x4000
+#define LOCAL_OVERFLOW_THRESHOLD 32000
+#define LOCAL_OVERFLOW_REDUCE 16000
 #define NT_LOCAL_SCORE int
 #define NT_LOCAL_SHIFT 16
 #define NT_LOCAL_MASK 0xffff
