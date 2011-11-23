@@ -182,8 +182,6 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 		p += sizeof(bwtint_t) + ((isa&0x60)>>4);
 		w = bwt_occ(isa, w, (const bwtint_t *)p);
 		isa = c + (w * 0x101010101010101ul >> 56);
-		 //only 0x1f1f... part in _i&31?
-		 //can we reduce this since we only really have to count the first bits?
 	} else {
 		c = bwt_B0(bwt, isa);
 		if (isa == bwt->seq_len)
@@ -216,7 +214,6 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 			k = cal_isa(bwt, k);
 		}
 	}
-	//k += (z * 0x101010101010101ul >> 56);
 	/* without setting bwt->sa[0] = -1, the following line should be
 	   changed to (sa + bwt->sa[k/bwt->sa_intv]) % (bwt->seq_len + 1) */
 	return sa + bwt->sa[k/bwt->sa_intv];
@@ -252,7 +249,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	if (*l >= bwt->primary) {
 		if (k > bwt->primary) {
 			--k;
-		} else if (k == 0) { // z of previous == 1ul
+		} else if (k == 0) {
 			*l = bwt->L2[c+1];
 			k = bwt->L2[c] + 1;
 			goto out;
@@ -283,10 +280,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		v ^= nucleo_pre_combine_3mask(v, w);
 		w += (v >> 2);
 	case 0x0: z &= y;
-		/*if (y == z) {
+		if (y == z) {
 			k = (bwtint_t)(-1);
 			goto out;
-		}*/
+		}
 		y = nucleo_3mask(y);
 		z = nucleo_3mask(z) + w;
 		k = *l;
@@ -301,10 +298,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		z = nucleo_3mask(v);
 		v ^= nucleo_pre_combine_3mask(v, y);
 		y += (v >> 2);
-		/*if (y == z) {
+		if (y == z) {
 			k = (bwtint_t)(-1);
 			goto out;
-		}*/
+		}
 		z += w;
 		k = *l;
 		break;
