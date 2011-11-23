@@ -74,7 +74,14 @@ typedef struct { size_t n, m; bwtintv_t *a; } bwtintv_v;
  * called bwt_B0 instead of bwt_B */
 #define bwt_B0(b, k) (bwt_bwt(b, k)>>((~(k)&0xf)<<1)&3)
 
-#define bwt_set_intv(bwt, c, ik) ((ik).x[0] = (bwt)->L2[(int)(c)], (ik).x[2] = (bwt)->L2[(int)(c)+1] - (bwt)->L2[(int)(c)], (ik).x[1] = (bwt)->L2[3-(c)], (ik).info = 0)
+// inverse Psi function
+#define bwt_invPsi(bwt, k)												\
+	(((k) == (bwt)->primary)? 0 :										\
+	 ((k) < (bwt)->primary)?											\
+	 (bwt)->L2[bwt_B0(bwt, k)] + bwt_occ(bwt, k, bwt_B0(bwt, k))		\
+	 : (bwt)->L2[bwt_B0(bwt, (k)-1)] + bwt_occ(bwt, k, bwt_B0(bwt, (k)-1)))
+
+#define bwt_set_intv(bwt, c, ik) ((ik).x[0] = (bwt)->L2[(int)(c)]+1, (ik).x[2] = (bwt)->L2[(int)(c)+1]-(bwt)->L2[(int)(c)], (ik).x[1] = (bwt)->L2[3-(c)]+1, (ik).info = 0)
 
 #ifdef __cplusplus
 extern "C" {
@@ -93,12 +100,13 @@ extern "C" {
 
 	void bwt_bwtupdate_core(bwt_t *bwt);
 
+	inline bwtint_t bwt_occ(const bwt_t *bwt, bwtint_t k, ubyte_t c);
 	inline void bwt_occ4(const bwt_t *bwt, bwtint_t k, bwtint_t cnt[4]);
 	bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k);
 
 	// more efficient version of bwt_occ/bwt_occ4 for retrieving two close Occ values
 	void bwt_gen_cnt_table(bwt_t *bwt);
-	inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c);
+	inline void bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t l, ubyte_t c, bwtint_t *ok, bwtint_t *ol);
 	inline void bwt_2occ4(const bwt_t *bwt, bwtint_t k, bwtint_t l, bwtint_t cntk[4], bwtint_t cntl[4]);
 
 	int bwt_match_exact(const bwt_t *bwt, int len, const ubyte_t *str, bwtint_t *sa_begin, bwtint_t *sa_end);
