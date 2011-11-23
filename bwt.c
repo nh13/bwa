@@ -148,11 +148,11 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 		c = bwt_B0(bwt, _i);
 		if (likely(isa < bwt->seq_len)) {
 			uint64_t w;
-			const uint64_t *p = (const uint64_t *)bwt->bwt + so * 6;
+			const uint32_t *p;
 			w = n_mask[c];
-			isa = bwt->L2[c] + ((uint32_t *)p)[c];
-			p += 2 + ((_i&0x60)>>5);
-			w = bwt_occ(_i, w, p);
+			isa = bwt->L2[c] + ((bwtint_t *)(p = bwt_occ_intv(bwt, _i)))[c];
+			p += sizeof(bwtint_t) + ((_i&0x60)>>4);
+			w = bwt_occ(_i, w, (bwtint_t *)p);
 			isa += w * 0x101010101010101ul >> 56;
 		} else {
 			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
@@ -167,10 +167,8 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 {
 	uint64_t w;
-	const uint64_t *p;
+	const uint32_t *p;
 	bwtint_t c;
-	c = isa/OCC_INTERVAL; //unaffected by isa decr.
-	p = (const uint64_t *)bwt->bwt + c * 6;
 	if (likely(isa != bwt->primary)) {
 		if (isa > bwt->primary) {
 			if (unlikely(isa > bwt->seq_len))
@@ -180,8 +178,8 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 		}
 		c = bwt_B0(bwt, isa);
 		w = n_mask[c];
-		c = bwt->L2[c] + ((uint32_t *)p)[c];
-		p += 2 + ((isa&0x60)>>5);
+		c = bwt->L2[c] + ((bwtint_t *)(p = bwt_occ_intv(bwt, isa)))[c];
+		p += sizeof(bwtint_t) + ((isa&0x60)>>4);
 		w = bwt_occ(isa, w, p);
 		isa = c + (w * 0x101010101010101ul >> 56);
 		 //only 0x1f1f... part in _i&31?
@@ -267,14 +265,14 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	bwtint_t n = *l;
 
 	--k;
-	p = (const uint64_t *)bwt->bwt + n/OCC_INTERVAL * 6;
-	*l = ((uint32_t *)p)[c] + bwt->L2[c];
+	p = bwt_occ_intv(bwt, n);
+	*l = p[c] + bwt->L2[c];
 	uint64_t x = (c == 1 ? 0xaaaaaaaaaaaaaaaaul :
 		(c == 2 ? 0x5555555555555555ul :
 		(c == 3 ? 0x0ul : 0xfffffffffffffffful)));
 
 	w = 0ul;
-	p += 2 + ((n&0x60)>>5);
+	p += (sizeof(bwtint_t)/2) + ((n&0x60)>>5);
 	v = *p ^ x;
 	y = v & (v >> 1) & occ_mask2[n&31];
 	z = occ_mask2[k&31];
@@ -311,10 +309,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		k = *l;
 		break;
 	default:
-		p2 = (const uint64_t *)bwt->bwt + k/OCC_INTERVAL * 6;
+		p2 = bwt_occ_intv(bwt, k);
 		n = (n & 0x60) | ((k & 0x60) >> 5);
-		k = ((uint32_t *)p2)[c] + bwt->L2[c];
-		p2 += 2 + (n & 0x3); //is really k
+		k = p2[c] + bwt->L2[c];
+		p2 += (sizeof(bwtint_t)/2) + (n & 0x3); //is really k
 		v = *p2 ^ x;
 		z &= v & (v >> 1);
 		switch (n) {
