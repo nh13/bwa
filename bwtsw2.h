@@ -13,8 +13,8 @@
 
 typedef struct {
 	int a, b, q, r, t, qr, bw;
-	int z, is, t_seeds, hard_clip;
-	float yita, mask_level, coef;
+	int z, is, t_seeds, hard_clip, multi_2nd;
+	float mask_level, coef;
 	int n_threads, chunk_size;
 } bsw2opt_t;
 
@@ -26,7 +26,7 @@ typedef struct {
 } bsw2hit_t;
 
 typedef struct {
-	int flag, nn, n_cigar, chr, pos, qual, mchr, mpos, pqual, isize;
+	int flag, nn, n_cigar, chr, pos, qual, mchr, mpos, pqual, isize, nm;
 	uint32_t *cigar;
 } bsw2aux_t;
 

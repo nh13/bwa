@@ -193,23 +193,16 @@ static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
 
 bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 {
-	bwtint_t m, sa = 0;
-	m = bwt->sa_intv - 1;
-	if (likely(!((m+1) & m) && bwt->primary <= bwt->seq_len)) {
+	bwtint_t mask, sa = 0;
+	mask = bwt->sa_intv - 1;
+	if (likely(bwt->primary <= bwt->seq_len)) {
 		// not power of 2 before decrement
-		while (k & m) {
+		while (k & mask) {
 			++sa;
 			k = cal_isa_PleSl(bwt, k);
 		}
 	} else {
-		bwtint_t add = m;
-		m |= m>>1;
-		m |= m>>2;
-		m |= m>>4;
-		m |= m>>8;
-		m |= m>>16;
-		add ^= m;
-		while((k + add) & m) {
+		while(k & mask) {
 			++sa;
 			k = cal_isa(bwt, k);
 		}
@@ -493,13 +486,17 @@ int bwt_smem1(const bwt_t *bwt, int len, const uint8_t *q, int x, bwtintv_v *mem
 	ik.info = x + 1;
 
 	for (i = x + 1, curr->n = 0; i < len; ++i) { // forward search
-		if (q[i] > 3) break;
-		c = 3 - q[i];
-		bwt_extend(bwt, &ik, ok, 0);
-		if (ok[c].x[2] != ik.x[2]) // change of the interval size
+		if (q[i] < 4) {
+			c = 3 - q[i];
+			bwt_extend(bwt, &ik, ok, 0);
+			if (ok[c].x[2] != ik.x[2]) // change of the interval size
+				kv_push(bwtintv_t, *curr, ik);
+			if (ok[c].x[2] == 0) break; // cannot be extended
+			ik = ok[c]; ik.info = i + 1;
+		} else { // an ambiguous base
 			kv_push(bwtintv_t, *curr, ik);
-		if (ok[c].x[2] == 0) break; // cannot be extended
-		ik = ok[c]; ik.info = i + 1;
+			break; // cannot be extended; in this case, i<len always stands
+		}
 	}
 	if (i == len) kv_push(bwtintv_t, *curr, ik); // push the last interval if we reach the end
 	bwt_reverse_intvs(curr); // s.t. smaller intervals visited first
@@ -533,24 +530,4 @@ int bwt_smem1(const bwt_t *bwt, int len, const uint8_t *q, int x, bwtintv_v *mem
 	if (tmpvec[0] == 0) free(a[0].a);
 	if (tmpvec[1] == 0) free(a[1].a);
 	return ret;
-}
-
-int bwt_smem(const bwt_t *bwt, int len, const uint8_t *q, bwtintv_v *mem, bwtintv_v *tmpvec[3])
-{
-	int x = 0, i;
-	bwtintv_v a[3], *tvec[2], *mem1;
-	kv_init(a[0]); kv_init(a[1]); kv_init(a[2]); // no memory allocation here
-	tvec[0] = tmpvec[0]? tmpvec[0] : &a[0];
-	tvec[1] = tmpvec[1]? tmpvec[1] : &a[1];
-	mem1    = tmpvec[2]? tmpvec[2] : &a[2];
-	mem->n = 0;
-	do {
-		x = bwt_smem1(bwt, len, q, x, mem1, tvec);
-		for (i = 0; i < mem1->n; ++i)
-			kv_push(bwtintv_t, *mem, mem1->a[i]);
-	} while (x < len);
-	if (tmpvec[0] == 0) free(a[0].a);
-	if (tmpvec[1] == 0) free(a[1].a);
-	if (tmpvec[2] == 0) free(a[2].a);
-	return mem->n;
 }
