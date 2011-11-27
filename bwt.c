@@ -140,7 +140,7 @@ static inline uint64_t bwt_occ(const bwtint_t k, uint64_t x, const bwtint_t *con
 	return nucleo_f0mask(y);
 }
 
-static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
+static inline bwtint_t bwt_invPsi(const bwt_t *bwt, bwtint_t isa)
 {
 	if (likely(isa != bwt->primary)) {
 		bwtint_t c, _i;
@@ -164,48 +164,13 @@ static inline bwtint_t cal_isa(const bwt_t *bwt, bwtint_t isa)
 	return isa;
 }
 
-static inline bwtint_t cal_isa_PleSl(const bwt_t *bwt, bwtint_t isa)
-{
-	uint64_t w;
-	const uint32_t *p;
-	bwtint_t c;
-	if (likely(isa != bwt->primary)) {
-		if (isa > bwt->primary) {
-			if (unlikely(isa > bwt->seq_len))
-				return 0;
-			--isa;
-
-		}
-		c = bwt_B0(bwt, isa);
-		w = n_mask[c];
-		c = bwt->L2[c] + ((const bwtint_t *)(p = bwt_occ_intv(bwt, isa)))[c];
-		p += sizeof(bwtint_t) + ((isa&0x60)>>4);
-		w = bwt_occ(isa, w, (const bwtint_t *)p);
-		isa = c + (w * 0x101010101010101ul >> 56);
-	} else {
-		c = bwt_B0(bwt, isa);
-		if (isa == bwt->seq_len)
-			++c;
-		isa = bwt->L2[c];
-	}
-	return isa;
-}
-
 bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 {
 	bwtint_t mask, sa = 0;
 	mask = bwt->sa_intv - 1;
-	if (likely(bwt->primary <= bwt->seq_len)) {
-		// not power of 2 before decrement
-		while (k & mask) {
-			++sa;
-			k = cal_isa_PleSl(bwt, k);
-		}
-	} else {
-		while(k & mask) {
-			++sa;
-			k = cal_isa(bwt, k);
-		}
+	while(k & mask) {
+		++sa;
+		k = bwt_invPsi(bwt, k);
 	}
 	/* without setting bwt->sa[0] = -1, the following line should be
 	   changed to (sa + bwt->sa[k/bwt->sa_intv]) % (bwt->seq_len + 1) */
@@ -230,7 +195,7 @@ void bwt_cal_sa(bwt_t *bwt, int intv)
 		if (isa % intv == 0)
 			bwt->sa[isa/intv] = sa;
 		--sa;
-		isa = cal_isa(bwt, isa);
+		isa = bwt_invPsi(bwt, isa);
 	}
 	if (isa % intv == 0) bwt->sa[isa/intv] = sa;
 	bwt->sa[0] = (bwtint_t)-1; // before this line, bwt->sa[0] = bwt->seq_len
