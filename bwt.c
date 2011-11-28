@@ -81,6 +81,9 @@ static inline int __occ_aux(uint64_t y)
 #define nucleo_5mask(w) 	(w & (w >> 1) & 0x5555555555555555ul)
 #define nucleo_3mask(w)		((w + (w >> 2)) & 0x3333333333333333ul)
 #define nucleo_f0mask(w)	((w + (w >> 4)) & 0x0f0f0f0f0f0f0f0ful)
+#define nucleo_ffmask(w)	((w + (w >> 8)) & 0x00ff00ff00ff00fful)
+#define nucleo_4fmask(w)	((w + (w >> 16)) & 0x0000ffff0000fffful)
+#define nucleo_8fmask(w)	((w + (w >> 32)) & 0x00000000fffffffful)
 
 #define nucleo_upto5mask(p, x, w) ({		\
 	w = *(p) ^ (x);				\
@@ -97,19 +100,6 @@ static inline int __occ_aux(uint64_t y)
 	nucleo_f0mask(w);			\
 })
 
-
-#define nucleo_pre_combine_3mask(v, w) ({	\
-	v = w;					\
-	w &= 0x3333333333333333ul;		\
-})
-
-// doesn't work?
-#define nucleo_pre_combine_f0mask(v, w) ({	\
-	v = w;					\
-	w &= 0x0f0f0f0f0f0f0f0ful;		\
-	w ^ v;					\
-})
-
 #define nucleo_combine_3mask(v, w) ({		\
 	v = w & 0x3333333333333333ul;		\
 	v + ((w ^ v) >> 2);			\
@@ -120,22 +110,21 @@ static inline int __occ_aux(uint64_t y)
 	v + ((w ^ v) >> 4);			\
 })
 
-static inline uint64_t bwt_occ(const bwtint_t k, uint64_t x, const bwtint_t *const p)
+static inline uint64_t bwt_occ(bwtint_t k, uint64_t x, const bwtint_t *const p)
 {
-	uint64_t w = 0ul;
 	uint64_t y = *p ^ x;
 	y &= (y >> 1) & occ_mask2[k&31];
 	switch (k&0x60) {
-		case 0x60: y += nucleo_upto5mask(p - 3, x, w);
-			y += nucleo_upto5mask(p - 2, x, w);
-			y = nucleo_combine_3mask(w, y);
-			y += nucleo_upto3mask(p - 1, x, w);
-			return nucleo_combine_f0mask(w, y);
-		case 0x00: y = nucleo_3mask(y);
+		case 0x60: y += nucleo_upto5mask(p - 3, x, k);
+			y += nucleo_upto5mask(p - 2, x, k);
+			y = nucleo_combine_3mask(k, y);
+			y += nucleo_upto3mask(p - 1, x, k);
+			return nucleo_combine_f0mask(k, y);
+		case 0x40: y += nucleo_upto5mask(p - 2, x, k);
+		case 0x20: y += nucleo_upto5mask(p - 1, x, k);
+			y = nucleo_combine_3mask(k, y);
 			break;
-		case 0x40: y += nucleo_upto5mask(p - 2, x, w);
-		case 0x20: y += nucleo_upto5mask(p - 1, x, w);
-			y = nucleo_combine_3mask(w, y);
+		case 0x00: y = nucleo_3mask(y);
 	}
 	return nucleo_f0mask(y);
 }
@@ -153,6 +142,9 @@ static inline bwtint_t bwt_invPsi(const bwt_t *bwt, bwtint_t isa)
 			isa = bwt->L2[c] + ((const bwtint_t *)(p = bwt_occ_intv(bwt, _i)))[c];
 			p += sizeof(bwtint_t) + ((_i&0x60)>>4);
 			w = bwt_occ(_i, w, (const bwtint_t *)p);
+			/*w = nucleo_ffmask(w);
+			w = nucleo_4fmask(w);
+			isa += nucleo_8fmask(w);*/
 			isa += w * 0x101010101010101ul >> 56;
 		} else {
 			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
@@ -182,13 +174,20 @@ bwtint_t bwt_sa(const bwt_t *bwt, bwtint_t k)
 void bwt_cal_sa(bwt_t *bwt, int intv)
 {
 	bwtint_t isa, sa, i; // S(isa) = sa
+	int intv_round = intv;
 
+	kv_roundup32(intv_round);
+	xassert(intv_round == intv, "SA sample interval is not a power of 2.");
 	xassert(bwt->bwt, "bwt_t::bwt is not initialized.");
 
 	if (bwt->sa) free(bwt->sa);
 	bwt->sa_intv = intv;
 	bwt->n_sa = (bwt->seq_len + intv) / intv;
 	bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
+	if (bwt->sa == 0) {
+		fprintf(stderr, "[%s] Fail to allocate %.3fMB memory. Abort!\n", __func__, bwt->n_sa * sizeof(bwtint_t) / 1024.0/1024.0);
+		abort();
+	}
 	// calculate SA value
 	isa = 0; sa = bwt->seq_len;
 	for (i = 0; i < bwt->seq_len; ++i) {
@@ -214,29 +213,27 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		}
 		--*l;
 	}
-	register uint64_t v;
-	uint64_t w, y, z;
+	bwtint_t w, y, z;
 	const bwtint_t *p, *p2;
 	bwtint_t n = *l;
 
 	--k;
 	p = (const bwtint_t*)bwt_occ_intv(bwt, n);
 	*l = p[c] + bwt->L2[c];
-	uint64_t x = (c == 1 ? 0xaaaaaaaaaaaaaaaaul :
+	const uint64_t x = (c == 1 ? 0xaaaaaaaaaaaaaaaaul :
 		(c == 2 ? 0x5555555555555555ul :
 		(c == 3 ? 0x0ul : 0xfffffffffffffffful)));
 
-	w = 0ul;
 	p += (sizeof(bwtint_t)/2) + ((n&0x60)>>5);
-	v = *p ^ x;
-	y = v & (v >> 1) & occ_mask2[n&31];
+	w = *p ^ x;
+	y = w & (w >> 1) & occ_mask2[n&31];
+	w = 0ul;
 	z = occ_mask2[k&31];
 	switch (((n&~31) - (k&~31)) | ((n&0x60) >> 5)) {
-	case 0x3: w = nucleo_upto5mask(p - 3, x, v);
-	case 0x2: w += nucleo_upto5mask(p - 2, x, v);
-	case 0x1: w += nucleo_upto5mask(p - 1, x, v);
-		v ^= nucleo_pre_combine_3mask(v, w);
-		w += (v >> 2);
+	case 0x3: w = nucleo_upto5mask(p - 3, x, k);
+	case 0x2: w += nucleo_upto5mask(p - 2, x, k);
+	case 0x1: w += nucleo_upto5mask(p - 1, x, k);
+		w = nucleo_combine_3mask(k, w);
 	case 0x0: z &= y;
 		if (y == z) {
 			k = (bwtint_t)(-1);
@@ -246,16 +243,14 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		z = nucleo_3mask(z) + w;
 		k = *l;
 		break;
-	case 0x23:w = nucleo_upto5mask(p - 3, x, v);
-	case 0x22:w += nucleo_upto5mask(p - 2, x, v);
-		v ^= nucleo_pre_combine_3mask(v, w);
-		w += (v >> 2);
-	case 0x21: v = nucleo_upto5mask(p - 1, x, v);
-		y += v;
-		v &= z;
-		z = nucleo_3mask(v);
-		v ^= nucleo_pre_combine_3mask(v, y);
-		y += (v >> 2);
+	case 0x23:w = nucleo_upto5mask(p - 3, x, k);
+	case 0x22:w += nucleo_upto5mask(p - 2, x, k);
+		w = nucleo_combine_3mask(k, w);
+	case 0x21: k = nucleo_upto5mask(p - 1, x, k);
+		y += k;
+		k &= z;
+		z = nucleo_3mask(k);
+		y = nucleo_combine_3mask(k, y);
 		if (y == z) {
 			k = (bwtint_t)(-1);
 			goto out;
@@ -268,51 +263,53 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		n = (n & 0x60) | ((k & 0x60) >> 5);
 		k = p2[c] + bwt->L2[c];
 		p2 += (sizeof(bwtint_t)/2) + (n & 0x3); //is really k
-		v = *p2 ^ x;
-		z &= v & (v >> 1);
+		w = *p2 ^ x;
+		z &= w & (w >> 1);
+		w = 0ul;
 		switch (n) {
-		case 0x63: w = nucleo_upto5mask(p - 3, x, v);
-		case 0x43: w += nucleo_upto5mask(p - 2, x, v);
-		case 0x23: w += nucleo_upto5mask(p - 1, x, v);
-			v ^= nucleo_pre_combine_3mask(v, w);
-			w += (v >> 2);
-		case 0x03: z += nucleo_upto5mask(p2 - 3, x, v);
-			z += nucleo_upto5mask(p2 - 2, x, v);
-			x = nucleo_upto5mask(p2 - 1, x, x);
-			v ^= nucleo_pre_combine_3mask(v, z);
-			z += (v >> 2) + nucleo_3mask(x);
+		case 0x63: w = nucleo_upto5mask(p - 3, x, n);
+		case 0x43: w += nucleo_upto5mask(p - 2, x, n);
+		case 0x23: w += nucleo_upto5mask(p - 1, x, n);
+			w = nucleo_combine_3mask(n, w);
+		case 0x03: z += nucleo_upto5mask(p2 - 3, x, n);
+			z += nucleo_upto5mask(p2 - 2, x, n);
+			z = nucleo_combine_3mask(n, z);
+			n = nucleo_upto5mask(p2 - 1, x, n);
+			z += nucleo_3mask(n);
 			break;
-		case 0x60: w = nucleo_upto5mask(p - 3, x, v);
-		case 0x40: w += nucleo_upto5mask(p - 2, x, v);
-		case 0x20: w += nucleo_upto5mask(p - 1, x, v);
-			v ^= nucleo_pre_combine_3mask(v, w);
-			w += (v >> 2);
+		case 0x60: w = nucleo_upto5mask(p - 3, x, n);
+		case 0x40: w += nucleo_upto5mask(p - 2, x, n);
+		case 0x20: w += nucleo_upto5mask(p - 1, x, n);
+			w = nucleo_combine_3mask(n, w);
 		case 0x00: z = nucleo_3mask(z);
 			break;
 		default:
 			switch (n) {
-			case 0x62: w = nucleo_upto5mask(p - 3, x, v);
-			case 0x42: w += nucleo_upto5mask(p - 2, x, v);
-			case 0x22: w += nucleo_upto5mask(p - 1, x, v);
-				v ^= nucleo_pre_combine_3mask(v, w);
-				w += (v >> 2);
-			case 0x02: z += nucleo_upto5mask(p2 - 2, x, v);
+			case 0x62: w = nucleo_upto5mask(p - 3, x, n);
+			case 0x42: w += nucleo_upto5mask(p - 2, x, n);
+			case 0x22: w += nucleo_upto5mask(p - 1, x, n);
+				w = nucleo_combine_3mask(n, w);
+			case 0x02: z += nucleo_upto5mask(p2 - 2, x, n);
 				break;
-			case 0x61: w = nucleo_upto5mask(p - 3, x, v);
-			case 0x41: w += nucleo_upto5mask(p - 2, x, v);
-			case 0x21: w += nucleo_upto5mask(p - 1, x, v);
-				v ^= nucleo_pre_combine_3mask(v, w);
-				w += (v >> 2);
+			case 0x61: w = nucleo_upto5mask(p - 3, x, n);
+			case 0x41: w += nucleo_upto5mask(p - 2, x, n);
+			case 0x21: w += nucleo_upto5mask(p - 1, x, n);
+				w = nucleo_combine_3mask(n, w);
 			}
-			z += nucleo_upto5mask(p2 - 1, x, v);
-			v ^= nucleo_pre_combine_3mask(v, z);
-			z += (v >> 2);
+			z += nucleo_upto5mask(p2 - 1, x, n);
+			z = nucleo_combine_3mask(n, z);
 		}
 		y = nucleo_3mask(y);
 	}
 	y += w;
 	z = nucleo_combine_f0mask(w, z);
-	y = nucleo_combine_f0mask(v, y);
+	y = nucleo_combine_f0mask(w, y);
+	/*y = nucleo_ffmask(y);
+	z = nucleo_ffmask(z);
+	z = nucleo_4fmask(z);
+	y = nucleo_4fmask(y);
+	*l += nucleo_8fmask(y);
+	k += nucleo_8fmask(z) + 1;*/
 	k += (z * 0x101010101010101ul >> 56) + 1;
 	*l += y * 0x101010101010101ul >> 56;
 out:
