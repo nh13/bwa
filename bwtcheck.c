@@ -12,7 +12,7 @@
 #include "bwtgap.h"
 #include "utils.h"
 
-void bwa_check_core(const char *prefix, int32_t length)
+void bwa_check_core(const char *prefix, int32_t length, int32_t print_sa)
 {
   bwt_t *bwt;
   ubyte_t *seq = NULL;
@@ -52,16 +52,20 @@ void bwa_check_core(const char *prefix, int32_t length)
       while(1) {
           if(i == j) {
               n = bwt_match_exact(bwt, i, seq, &sa_begin, &sa_end); 
-              int k;
-              for(k=0;k<i;k++) {
-                  fputc("ACGTN"[seq[k]], stderr);
-              }
               if(0 < n && sa_begin <= sa_end) {
-                  fprintf(stderr, " %llu %llu %d\n", sa_begin, sa_end, n);
                   sum += n;
               }
-              else {
-                  fprintf(stderr, " NA NA NA\n");
+              if(1 == print_sa) {
+                  int k;
+                  for(k=0;k<i;k++) {
+                      fputc("ACGTN"[seq[k]], stderr);
+                  }
+                  if(0 < n && sa_begin <= sa_end) {
+                      fprintf(stderr, " %llu %llu %d\n", sa_begin, sa_end, n);
+                  }
+                  else {
+                      fprintf(stderr, " NA NA NA\n");
+                  }
               }
 
               j--;
@@ -96,11 +100,12 @@ void bwa_check_core(const char *prefix, int32_t length)
 
 int bwa_check(int argc, char *argv[])
 {
-	int c, length = 12;
+	int c, length = 12, print_sa = 0;
 
-	while ((c = getopt(argc, argv, "l:")) >= 0) {
+	while ((c = getopt(argc, argv, "l:p")) >= 0) {
 		switch (c) {
                   case 'l': length = atoi(optarg); break;
+                  case 'p': print_sa = 1; break;
                   default: return 1;
 		}
 	}
@@ -109,9 +114,10 @@ int bwa_check(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   bwa check [options] <prefix>\n\n");
 		fprintf(stderr, "Options: -l INT    the kmer length to check\n");
+		fprintf(stderr, "Options: -p        print out the SA intervals for each kmer\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
-	bwa_check_core(argv[optind], length);
+	bwa_check_core(argv[optind], length, print_sa);
 	return 0;
 }
