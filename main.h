@@ -12,6 +12,7 @@ extern "C" {
 	int bwa_bwt2sa(int argc, char *argv[]);
 	int bwa_index(int argc, char *argv[]);
 	int bwa_aln(int argc, char *argv[]);
+	int bwa_check(int argc, char *argv[]);
 	int bwt_bwtgen_main(int argc, char *argv[]);
 
 	int bwa_sai2sam_se(int argc, char *argv[]);
