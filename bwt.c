@@ -93,7 +93,7 @@ static inline int __occ_aux(uint64_t y)
 
 //for convenience, these macros do several stages in one call.
 #define nucleo_upto5mask(p, x, w) ({		\
-	w = *(p) ^ (x);				\
+	w = (p) ^ (x);				\
 	nucleo_5mask(w);			\
 })
 
@@ -139,13 +139,13 @@ static inline uint64_t bwt_occ(bwtint_t k, uint64_t x, const bwtint_t *const p)
 	uint64_t y = *p ^ x;
 	y &= (y >> 1) & occ_mask2[k&31];
 	switch (k&0x60) {
-		case 0x60: y += nucleo_upto5mask(p - 3, x, k);
-			y += nucleo_upto5mask(p - 2, x, k);
+		case 0x60: y += nucleo_upto5mask(*(p - 3), x, k);
+			y += nucleo_upto5mask(*(p - 2), x, k);
 			y = nucleo_combine_3mask(k, y);
-			y += nucleo_upto3mask(p - 1, x, k);
+			y += nucleo_upto3mask(*(p - 1), x, k);
 			return nucleo_combine_f0mask(k, y);
-		case 0x40: y += nucleo_upto5mask(p - 2, x, k);
-		case 0x20: y += nucleo_upto5mask(p - 1, x, k);
+		case 0x40: y += nucleo_upto5mask(*(p - 2), x, k);
+		case 0x20: y += nucleo_upto5mask(*(p - 1), x, k);
 			y = nucleo_combine_3mask(k, y);
 			break;
 		case 0x00: y = nucleo_3mask(y);
@@ -255,9 +255,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	w = 0ul;
 	z = occ_mask2[k&31];
 	switch (n) {
-	case 0x3: w = nucleo_upto5mask(p - 3, x, k);
-	case 0x2: w += nucleo_upto5mask(p - 2, x, k);
-	case 0x1: w += nucleo_upto5mask(p - 1, x, k);
+	case 0x3: w = nucleo_upto5mask(*(p - 3), x, k);
+	case 0x2: w += nucleo_upto5mask(*(p - 2), x, k);
+	case 0x1: w += nucleo_upto5mask(*(p - 1), x, k);
 		w = nucleo_combine_3mask(k, w);
 	case 0x0: z &= y;
 		if (y == z) {
@@ -268,10 +268,10 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		z = nucleo_3mask(z) + w;
 		k = *l;
 		break;
-	case 0x22:w = nucleo_upto5mask(p - 3, x, k);
-	case 0x21:w += nucleo_upto5mask(p - 2, x, k);
+	case 0x22:w = nucleo_upto5mask(*(p - 3), x, k);
+	case 0x21:w += nucleo_upto5mask(*(p - 2), x, k);
 		w = nucleo_combine_3mask(k, w);
-	case 0x20: k = nucleo_upto5mask(p - 1, x, k);
+	case 0x20: k = nucleo_upto5mask(*(p - 1), x, k);
 		y += k;
 		k &= z;
 		z = nucleo_3mask(k);
@@ -292,36 +292,36 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 		z &= w & (w >> 1);
 		w = 0ul;
 		switch (n) {
-		case 0x03: w = nucleo_upto5mask(p - 3, x, n);
-		case 0x23: w += nucleo_upto5mask(p - 2, x, n);
-		case 0x43: w += nucleo_upto5mask(p - 1, x, n);
+		case 0x03: w = nucleo_upto5mask(*(p - 3), x, n);
+		case 0x23: w += nucleo_upto5mask(*(p - 2), x, n);
+		case 0x43: w += nucleo_upto5mask(*(p - 1), x, n);
 			w = nucleo_combine_3mask(n, w);
-		case 0x63: z += nucleo_upto5mask(p2 - 3, x, n);
-			z += nucleo_upto5mask(p2 - 2, x, n);
+		case 0x63: z += nucleo_upto5mask(*(p2 - 3), x, n);
+			z += nucleo_upto5mask(*(p2 - 2), x, n);
 			z = nucleo_combine_3mask(n, z);
-			n = nucleo_upto5mask(p2 - 1, x, n);
+			n = nucleo_upto5mask(*(p2 - 1), x, n);
 			z += nucleo_3mask(n);
 			break;
-		case 0x60: w = nucleo_upto5mask(p - 3, x, n);
-		case 0x40: w += nucleo_upto5mask(p - 2, x, n);
-		case 0x20: w += nucleo_upto5mask(p - 1, x, n);
+		case 0x60: w = nucleo_upto5mask(*(p - 3), x, n);
+		case 0x40: w += nucleo_upto5mask(*(p - 2), x, n);
+		case 0x20: w += nucleo_upto5mask(*(p - 1), x, n);
 			w = nucleo_combine_3mask(n, w);
 		case 0x00: z = nucleo_3mask(z);
 			break;
 		default:
 			switch (n) {
-			case 0x22: w = nucleo_upto5mask(p - 3, x, n);
-			case 0x02: w += nucleo_upto5mask(p - 2, x, n);
-			case 0x62: w += nucleo_upto5mask(p - 1, x, n);
+			case 0x22: w = nucleo_upto5mask(*(p - 3), x, n);
+			case 0x02: w += nucleo_upto5mask(*(p - 2), x, n);
+			case 0x62: w += nucleo_upto5mask(*(p - 1), x, n);
 				w = nucleo_combine_3mask(n, w);
-			case 0x42: z += nucleo_upto5mask(p2 - 2, x, n);
+			case 0x42: z += nucleo_upto5mask(*(p2 - 2), x, n);
 				break;
-			case 0x41: w = nucleo_upto5mask(p - 3, x, n);
-			case 0x61: w += nucleo_upto5mask(p - 2, x, n);
-			case 0x01: w += nucleo_upto5mask(p - 1, x, n);
+			case 0x41: w = nucleo_upto5mask(*(p - 3), x, n);
+			case 0x61: w += nucleo_upto5mask(*(p - 2), x, n);
+			case 0x01: w += nucleo_upto5mask(*(p - 1), x, n);
 				w = nucleo_combine_3mask(n, w);
 			}
-			z += nucleo_upto5mask(p2 - 1, x, n);
+			z += nucleo_upto5mask(*(p2 - 1), x, n);
 			z = nucleo_combine_3mask(n, z);
 		}
 		y = nucleo_3mask(y);
