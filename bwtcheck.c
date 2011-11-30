@@ -44,6 +44,8 @@ void bwa_check_core(const char *prefix, int32_t length, int32_t print_sa)
   }
   */
 
+  fprintf(stderr, "primary: %llu\n", bwt->primary);
+
   for(i=1;i<=length;i++) {
       seq = calloc(i, sizeof(ubyte_t));
 
