@@ -78,13 +78,20 @@ static inline int __occ_aux(uint64_t y)
 	return ((y + (y >> 4)) & 0xf0f0f0f0f0f0f0ful) * 0x101010101010101ul >> 56;
 }
 
+//reduce nucleotide to bit counting - after w xor n_mask[c].
 #define nucleo_5mask(w) 	(w & (w >> 1) & 0x5555555555555555ul)
+
+//transforms in five stages from bits to number of bits.
+//these do not allow addition of several of the previous bit-count stage
 #define nucleo_3mask(w)		((w + (w >> 2)) & 0x3333333333333333ul)
 #define nucleo_f0mask(w)	((w + (w >> 4)) & 0x0f0f0f0f0f0f0f0ful)
+
+// The combined three of these do the same as w * 0x101010101010101ull >> 56
 #define nucleo_ffmask(w)	((w + (w >> 8)) & 0x00ff00ff00ff00fful)
 #define nucleo_4fmask(w)	((w + (w >> 16)) & 0x0000ffff0000fffful)
 #define nucleo_8fmask(w)	((w + (w >> 32)) & 0x00000000fffffffful)
 
+//for convenience, these macros do several stages in one call.
 #define nucleo_upto5mask(p, x, w) ({		\
 	w = *(p) ^ (x);				\
 	nucleo_5mask(w);			\
@@ -100,6 +107,8 @@ static inline int __occ_aux(uint64_t y)
 	nucleo_f0mask(w);			\
 })
 
+// These combine macros are alternative stages from bits to number of bits,
+// these once allow the addition of several of the previous bit-count stage
 #define nucleo_combine_3mask(v, w) ({		\
 	v = w & 0x3333333333333333ul;		\
 	v + ((w ^ v) >> 2);			\
@@ -111,6 +120,22 @@ static inline int __occ_aux(uint64_t y)
 })
 
 static inline uint64_t bwt_occ(bwtint_t k, uint64_t x, const bwtint_t *const p)
+#define nucleo_combine_ffmask(v, w) ({		\
+	v = w & 0x00ff00ff00ff00fful;		\
+	v + ((w ^ v) >> 8);			\
+})
+
+#define nucleo_combine_4fmask(v, w) ({		\
+	v = w & 0x0000ffff0000fffful;		\
+	v + ((w ^ v) >> 16);			\
+})
+
+#define nucleo_combine_8fmask(v, w) ({		\
+	v = w & 0x00000000fffffffful;		\
+	v + ((w ^ v) >> 32);			\
+})
+
+
 {
 	uint64_t y = *p ^ x;
 	y &= (y >> 1) & occ_mask2[k&31];
