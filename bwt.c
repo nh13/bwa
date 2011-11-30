@@ -119,7 +119,6 @@ static inline int __occ_aux(uint64_t y)
 	v + ((w ^ v) >> 4);			\
 })
 
-static inline uint64_t bwt_occ(bwtint_t k, uint64_t x, const bwtint_t *const p)
 #define nucleo_combine_ffmask(v, w) ({		\
 	v = w & 0x00ff00ff00ff00fful;		\
 	v + ((w ^ v) >> 8);			\
@@ -135,7 +134,7 @@ static inline uint64_t bwt_occ(bwtint_t k, uint64_t x, const bwtint_t *const p)
 	v + ((w ^ v) >> 32);			\
 })
 
-
+static inline uint64_t bwt_occ(bwtint_t k, uint64_t x, const bwtint_t *const p)
 {
 	uint64_t y = *p ^ x;
 	y &= (y >> 1) & occ_mask2[k&31];
