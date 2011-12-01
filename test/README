@@ -1,0 +1,8 @@
+
+first run prepare_seq_data.sh to get some test sequence data ready
+
+test_diff.sh can be used to time your branch and compare differences
+between your branch of bwa and another
+
+test_prof.sh can be used to gather profiling information
+

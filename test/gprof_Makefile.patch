@@ -1,0 +1,30 @@
+diff --git a/Makefile b/Makefile
+index 1fe8462..6f4fd4d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,6 +1,6 @@
+ CC=			gcc
+ CXX=		g++
+-CFLAGS=		-g -Wall -O2
++CFLAGS=		-pg -g -Wall -pg -O2 -pg -fprofile-arcs -ftest-coverage
+ CXXFLAGS=	$(CFLAGS)
+ DFLAGS=		-DHAVE_PTHREAD #-D_NO_SSE2 #-D_FILE_OFFSET_BITS=64
+ OBJS=		QSufSort.o bwt_gen.o utils.o bwt.o bwtio.o bwtaln.o bwtgap.o \
+@@ -16,14 +16,14 @@ SUBDIRS=	. bwt_gen
+ .SUFFIXES:.c .o .cc
+ 
+ .c.o:
+-		$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
++		$(CC) -pg -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -pg -o $@
+ .cc.o:
+-		$(CXX) -c $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
++		$(CXX) -pg -c $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $< -pg -o $@
+ 
+ all:$(PROG)
+ 
+ bwa:$(OBJS) main.o
+-		$(CC) $(CFLAGS) $(DFLAGS) $(OBJS) main.o -o $@ $(LIBS)
++		$(CC) -pg $(CFLAGS) -pg $(DFLAGS) -pg $(OBJS) main.o -pg -o $@ $(LIBS)
+ 
+ QSufSort.o:QSufSort.h
+ 
