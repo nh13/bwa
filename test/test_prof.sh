@@ -21,7 +21,6 @@ usage() {
 [ $# -gt 1 ] && FA="$3";
 [ -d $DIR ] || { usage "specify bwa directory with -a"; }
 BWA="$DIR/bwa"
-[ -x "$BWA" ] || { usage "$BWA is not an executable"; }
 
 CWD="`pwd`"
 dest="$CWD/out"
@@ -50,31 +49,31 @@ find_newf() {
 profile() {
 	mv gmon.out "$DIR/"
 	cd "$DIR"
-	cp gmon.out $log/gmon/${1}_${BN}${BV}_${2}_gmon.out
-	gprof ./bwa > "$log/${1}_${BN}${BV}_${2}_gprof.txt"
+	cp gmon.out $log/gmon/${1}_${BN}${TAG}_${2}_gmon.out
+	gprof ./bwa > "$log/${1}_${BN}${TAG}_${2}_gprof.txt"
 	for f in *.c *.h; do
 		gcov -b $f
-		[ -f "$f.gcov" ] && mv "$f.gcov" "$log/gcov/${f}_${1}_${BN}${BV}_${2}.gcov"
+		[ -f "$f.gcov" ] && mv "$f.gcov" "$log/gcov/${f}_${1}_${BN}${TAG}_${2}.gcov"
 	done
 	cd $CWD
 }
 
-NDX=$(find_newf "$dest/aln1_${BN}_" "_gprof.txt")
+NDX=$(find_newf "$log/aln_${BN}${TAG}_" "_gprof.txt")
 
 echo "----------aln"
 $BWA aln -t 4 $CWD/$FA ${FQ} > $dest/${BN}${TAG}.sai
-profile aln $NDX
+profile aln${TAG} $NDX
 
 echo "---------- sampe"
 $BWA samse $CWD/$FA $dest/${BN}${TAG}.sai ${FQ} > $dest/${BN}${TAG}.sam
-profile samse $NDX
+profile samse${TAG} $NDX
 
 echo "testing output ..."
 #ignore first characters, contains bwa version
 [ -f $dest/${BN}_alt.sam -a -f $dest/${BN}.sam ] || { usage "$dest/${BN}(_alt).sam does not yet exist"; }
 cmp -i2850 $dest/${BN}.sam $dest/${BN}_alt.sam
 echo "(silence is good in this case)"
-#rm $dest/${BN}${BV}{.sam,{1,2}.sai}
+#rm $dest/${BN}${TAG}{.sam,{1,2}.sai}
 #cd "$DIR"
 #rm *.gcda *.gcov *.gcno gmon.out
 echo "output is in $log/ and $log/gcov/"
