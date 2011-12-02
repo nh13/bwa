@@ -4,5 +4,10 @@ first run prepare_seq_data.sh to get some test sequence data ready
 test_diff.sh can be used to time your branch and compare differences
 between your branch of bwa and another
 
+e.g. also git clone lh3's bwa branch in a seperate dir.
+and run from this test directory:
+test_diff.sh -a ${path_to}lh3/bwa
+
 test_prof.sh can be used to gather profiling information
+(again run from this test directory)
 

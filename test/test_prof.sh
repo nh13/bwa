@@ -17,8 +17,8 @@ usage() {
 	[ -d "$DIR" ] || DIR="${DIR/\/bwa\/bwa/\/bwa}"
 	shift;
 }
-[ $# -gt 0 ] && FQ="$2"
-[ $# -gt 1 ] && FA="$3";
+[ $# -gt 0 ] && FQ="$1"
+[ $# -gt 1 ] && FA="$2";
 [ -d $DIR ] || { usage "specify bwa directory with -a"; }
 BWA="$DIR/bwa"
 
