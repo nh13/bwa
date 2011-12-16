@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include "utils.h"
 #include "bwt.h"
+#include "bwt_aux.h"
 
 static const uint64_t occ_mask[32] = {
 	0xc0000000ul, 	0xf0000000ul, 	0xfc000000ul,
@@ -245,7 +246,7 @@ void bwt_cal_sa(bwt_t *bwt, int intv)
 }
 
 // an analogy to bwt_occ() but more efficient, requiring k <= l
-inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
+inline bwtint_t bwt_2occ_rk(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 {
 	uint64_t y, z, w;
 	const uint64_t x = n_mask[c];
@@ -360,6 +361,40 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 	k += (z * 0x101010101010101ul >> 56) + 1;
 	*l += y * 0x101010101010101ul >> 56;
 	return k;
+}
+
+inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
+{
+  bwtint_t ok1, ol1, ok2, ol2, ok3, ol3;
+  bwtint_t cntk[4], cntl[4];
+
+  ok1 = ok2 = ok3 = 0;
+  ol1 = ol2 = ol3 = 0;
+  
+  bwt_aux_2occ(bwt, k, *l, c, &ok1, &ol1);
+  ok1 += bwt->L2[c] + 1;
+  ol1 += bwt->L2[c];
+
+  ol2 = *l;
+  ok2 = bwt_2occ_rk(bwt, k, &ol2, c);
+
+  bwt_2occ4(bwt, k, *l, cntk, cntl);
+  ok3 = cntk[c] + bwt->L2[c] + 1;
+  ol3 = cntl[c] + bwt->L2[c];
+
+  if(ok1 != ok2 || ol1 != ol2 || ok1 != ok3 || ol1 != ol3) {
+      fprintf(stderr, "\nERROR:\nc=%u k=%lld *l=%lld\n",
+              c, k, *l); 
+      fprintf(stderr, "ok1=%lld ok2=%lld ok3=%lld\n",
+              ok1, ok2, ok3);
+      fprintf(stderr, "ol1=%lld ol2=%lld ol3=%lld\n", 
+              ol1, ol2, ol3);
+      exit(1);
+  }
+
+  *l = ol2;
+  return ok2;
+  
 }
 
 #define __occ_aux4(bwt, b)											\
