@@ -372,7 +372,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
   ol1 = ol2 = ol3 = 0;
   
   bwt_aux_2occ(bwt, k, *l, c, &ok1, &ol1);
-  // NB: we must add the counts, as this is not added in the above function
+  // NB: we must add the counts, as this is added in the bwt_2occ_rk function
   ok1 += bwt->L2[c] + 1;
   ol1 += bwt->L2[c];
 
@@ -380,7 +380,7 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
   ok2 = bwt_2occ_rk(bwt, k, &ol2, c);
 
   bwt_2occ4(bwt, k, *l, cntk, cntl);
-  // NB: we must add the counts, as this is not added in the above function
+  // NB: we must add the counts, as this is added in the bwt_2occ_rk function
   ok3 = cntk[c] + bwt->L2[c] + 1;
   ol3 = cntl[c] + bwt->L2[c];
 
