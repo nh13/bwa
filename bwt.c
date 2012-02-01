@@ -162,16 +162,15 @@ static inline bwtint_t bwt_invPsi(const bwt_t *bwt, bwtint_t isa)
 		_i = (isa < bwt->primary) ? isa : isa - 1;
 		c = bwt_B0(bwt, _i);
 		if (likely(isa < bwt->seq_len)) {
-			uint64_t w;
 			const uint32_t *p;
-			w = n_mask[c];
 			isa = bwt->L2[c] + ((const bwtint_t *)(p = bwt_occ_intv(bwt, _i)))[c];
+			c = n_mask[c];
 			p += sizeof(bwtint_t) + ((_i&0x60)>>4);
-			w = bwt_occ(_i, w, p);
+			c = bwt_occ(_i, c, p);
 			/*w = nucleo_ffmask(w);
 			w = nucleo_4fmask(w);
 			isa += nucleo_8fmask(w);*/
-			isa += w * 0x101010101010101ul >> 56;
+			isa += c * 0x101010101010101ul >> 56;
 		} else {
 			isa = (isa == bwt->seq_len ? bwt->L2[c+1] : bwt->L2[c]);
 		}

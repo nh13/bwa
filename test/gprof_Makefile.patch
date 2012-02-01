@@ -1,12 +1,12 @@
 diff --git a/Makefile b/Makefile
-index 1fe8462..6f4fd4d 100644
+index 1fe8462..47dcc0a 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -1,6 +1,6 @@
  CC=			gcc
  CXX=		g++
 -CFLAGS=		-g -Wall -O2
-+CFLAGS=		-pg -g -Wall -pg -O2 -pg -fprofile-arcs -ftest-coverage
++CFLAGS=		-pg -g -Wall -pg -O2 -pg -fprofile-arcs -ftest-coverage -msse2 -mfpmath=sse
  CXXFLAGS=	$(CFLAGS)
  DFLAGS=		-DHAVE_PTHREAD #-D_NO_SSE2 #-D_FILE_OFFSET_BITS=64
  OBJS=		QSufSort.o bwt_gen.o utils.o bwt.o bwtio.o bwtaln.o bwtgap.o \
