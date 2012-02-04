@@ -60,6 +60,9 @@ static const uint32_t occ_mask[16] = {
 static const uint64_t n_mask[5] = { 0xfffffffffffffffful, 0xaaaaaaaaaaaaaaaaul, 
 		0x5555555555555555ul, 0x0ul, 0xfffffffffffffffful };
 
+static __m128i n_mask_128[3];
+static __m64 n_mask_64[8];
+
 void bwt_gen_cnt_table(bwt_t *bwt)
 {
 	int i, j;
@@ -69,6 +72,17 @@ void bwt_gen_cnt_table(bwt_t *bwt)
 			x |= (((i&3) == j) + ((i>>2&3) == j) + ((i>>4&3) == j) + (i>>6 == j)) << (j<<3);
 		bwt->cnt_table[i] = x;
 	}
+	n_mask_64[0] = _mm_cvtsi64x_si64(0xfffffffffffffffful);
+	n_mask_64[1] = _mm_cvtsi64x_si64(0xaaaaaaaaaaaaaaaaul);
+	n_mask_64[2] = _mm_cvtsi64x_si64(0x5555555555555555ul);
+	n_mask_64[3] = _mm_cvtsi64x_si64(0x0ul);
+	n_mask_64[4] = _mm_cvtsi64x_si64(0xfffffffffffffffful);
+	n_mask_64[5] = _mm_cvtsi64x_si64(0x3333333333333333ul);
+	n_mask_64[6] = _mm_cvtsi64x_si64(0x0f0f0f0f0f0f0f0ful);
+	n_mask_64[7] = _mm_cvtsi64x_si64(0x1555555555555555ul);
+	n_mask_128[0] = _mm_set1_epi64(n_mask_64[2]);
+	n_mask_128[1] = _mm_set1_epi64(n_mask_64[5]);
+	n_mask_128[2] = _mm_set1_epi64(n_mask_64[6]);
 }
 
 static inline int __occ_aux(uint64_t y)
@@ -138,22 +152,13 @@ static inline int __occ_aux(uint64_t y)
 	v + ((w ^ v) >> 32);			\
 })
 
-#define _mm_n_xmask_si64(q, shft, m) ({			\
-	q = _mm_add_si64(q, _mm_srli_si64(q, shft));	\
-	_mm_and_si64(q, _mm_cvtsi64x_si64(m));		\
-})
-
 #define _mm_nucleo_pre5mask(t, x) ({			\
 	t = _mm_xor_si128(t, _mm_set1_epi64(x));	\
 	_mm_and_si128(t, _mm_srli_epi64(t, 1));		\
 })
 
-#define _mm_and_si128_set1_epi64i(t, i)				\
-	_mm_and_si128(t, _mm_set1_epi64(_mm_cvtsi64x_si64(i)));
-
-
 #define _mm_cn_mask_si128(t, t2, shft, m) ({		\
-	t2 = _mm_and_si128_set1_epi64i(t, m)		\
+	t2 = _mm_and_si128(t, m);			\
 	t = _mm_srli_epi64(_mm_xor_si128(t, t2), shft);	\
 	_mm_add_epi64(t, t2);				\
 })
@@ -172,8 +177,8 @@ static inline uint64_t bwt_occ(bwtint_t k, const uint64_t xx, const uint32_t *co
 	x = _mm_cvtsi64x_si64(xx);
 	__m128i t, t2;
 	q = _mm_cvtsi64x_si64(0ul);
-	const __m64 occ_mask2k = _mm_sub_si64(_mm_cvtsi64x_si64(0x5555555555555555ul),
-		_mm_srli_si64(_mm_cvtsi64x_si64(0x1555555555555555ul), ((k&31)<<1)));
+	const __m64 occ_mask2k = _mm_sub_si64(n_mask_64[2], _mm_srli_si64(n_mask_64[7],
+		((k&31)<<1)));
 	switch (k&0x60) {
 		case 0x60:
 			t = _mm_set_epi32(p[-2], p[-1], p[0], p[1]);
@@ -181,14 +186,13 @@ static inline uint64_t bwt_occ(bwtint_t k, const uint64_t xx, const uint32_t *co
 			t2 = _mm_nucleo_pre5mask(t2, x);
 			t = _mm_nucleo_pre5mask(t, x);
 
-			t = _mm_and_si128(t, _mm_set_epi64(
-				_mm_cvtsi64x_si64(0x5555555555555555ul), occ_mask2k));
-			t2 = _mm_and_si128_set1_epi64i(t2, 0x5555555555555555ul);
+			t = _mm_and_si128(t, _mm_set_epi64(n_mask_64[2], occ_mask2k));
+			t2 = _mm_and_si128(t2, n_mask_128[0]);
 
 			t = _mm_add_epi64(t, t2);
 
-			t = _mm_cn_mask_si128(t, t2, 2, 0x3333333333333333ul);
-			t = _mm_cn_mask_si128(t, t2, 4, 0x0f0f0f0f0f0f0f0ful);
+			t = _mm_cn_mask_si128(t, t2, 2, n_mask_128[1]);
+			t = _mm_cn_mask_si128(t, t2, 4, n_mask_128[2]);
 			y = _mm_extract_epi64(t, 0) + _mm_extract_epi64(t, 1);
 
 			return y;
@@ -200,10 +204,10 @@ static inline uint64_t bwt_occ(bwtint_t k, const uint64_t xx, const uint32_t *co
 
 			t = _mm_set_epi32(p[-4], p[-3], p[-2], p[-1]);
 			t = _mm_nucleo_pre5mask(t, x);
-			t = _mm_and_si128_set1_epi64i(t, 0x5555555555555555ul);
+			t = _mm_and_si128(t, n_mask_128[0]);
 
-			t = _mm_add_epi64(t, _mm_set_epi64(_mm_cvtsi64x_si64(0x0ul), q));
-			t = _mm_cn_mask_si128(t, t2, 2, 0x3333333333333333ul);
+			t = _mm_add_epi64(t, _mm_set_epi64(n_mask_64[3], q));
+
 			q = _mm_cvtsi64x_si64(_mm_extract_epi64(t, 1)); // high
 			q = _mm_add_si64(q, _mm_movepi64_pi64(t)); // + add low
 			break;
@@ -211,22 +215,24 @@ static inline uint64_t bwt_occ(bwtint_t k, const uint64_t xx, const uint32_t *co
 			t = _mm_set_epi32(p[-2], p[-1], p[0], p[1]);
 			t = _mm_nucleo_pre5mask(t, x);
 
-			t = _mm_and_si128(t, _mm_set_epi64(
-				_mm_cvtsi64x_si64(0x5555555555555555ul), occ_mask2k));
+			t = _mm_and_si128(t, _mm_set_epi64(n_mask_64[2], occ_mask2k));
 
-			t = _mm_cn_mask_si128(t, t2, 2, 0x3333333333333333ul);
-			q = _mm_cvtsi64x_si64(_mm_extract_epi64(t, 1)); // high
-			q = _mm_add_si64(q, _mm_movepi64_pi64(t)); // + add low
+			q = _mm_cvtsi64x_si64(_mm_extract_epi64(t, 1));
+			q = _mm_add_si64(q, _mm_movepi64_pi64(t));
 			break;
 		default: //case 0x00:
 			q = _mm_set_pi32(p[0], p[1]);
 			q = _mm_xor_si64(q, x);
 			q = _mm_and_si64(q, _mm_srli_si64(q, 1));
-			q =  _mm_and_si64(q, occ_mask2k);
-
-			q = _mm_n_xmask_si64(q, 2, 0x3333333333333333ul);
+			q = _mm_and_si64(q, occ_mask2k);
 	}
-	q = _mm_n_xmask_si64(q, 4, 0x0f0f0f0f0f0f0f0ful);
+	x = _mm_and_si64(q, n_mask_64[5]);
+	q = _mm_srli_si64(_mm_xor_si64(q, x), 2);
+	q = _mm_add_si64(q, x);
+
+	q = _mm_add_si64(q, _mm_srli_si64(q, 4));
+	q = _mm_and_si64(q, n_mask_64[6]);
+
 	return _mm_cvtsi64_si64x(q);
 }
 
