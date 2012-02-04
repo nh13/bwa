@@ -30,6 +30,8 @@
 #include <string.h>
 #include <assert.h>
 #include <stdint.h>
+#include <emmintrin.h>
+#include <mmintrin.h>
 #include "utils.h"
 #include "bwt.h"
 #include "kvec.h"
@@ -136,23 +138,96 @@ static inline int __occ_aux(uint64_t y)
 	v + ((w ^ v) >> 32);			\
 })
 
-static inline uint64_t bwt_occ(bwtint_t k, const uint64_t x, const uint32_t *const p)
+#define _mm_n_xmask_si64(q, shft, m) ({			\
+	q = _mm_add_si64(q, _mm_srli_si64(q, shft));	\
+	_mm_and_si64(q, _mm_cvtsi64x_si64(m));		\
+})
+
+#define _mm_nucleo_pre5mask(t, x) ({			\
+	t = _mm_xor_si128(t, _mm_set1_epi64(x));	\
+	_mm_and_si128(t, _mm_srli_epi64(t, 1));		\
+})
+
+#define _mm_and_si128_set1_epi64i(t, i)				\
+	_mm_and_si128(t, _mm_set1_epi64(_mm_cvtsi64x_si64(i)));
+
+
+#define _mm_cn_mask_si128(t, t2, shft, m) ({		\
+	t2 = _mm_and_si128_set1_epi64i(t, m)		\
+	t = _mm_srli_epi64(_mm_xor_si128(t, t2), shft);	\
+	_mm_add_epi64(t, t2);				\
+})
+
+#define _mm_extract_epi32(x, imm) 			\
+	_mm_cvtsi128_si32(_mm_srli_si128((x), 4 * (imm)))
+
+//is this arch dependent? spec states it's intel 64 only
+#define _mm_extract_epi64(x, imm) 			\
+	_mm_cvtsi128_si64(_mm_srli_si128((x), 8 * (imm)))
+
+static inline uint64_t bwt_occ(bwtint_t k, const uint64_t xx, const uint32_t *const p)
 {
-	uint64_t y = ((uint64_t)p[0]<<32 | p[1]) ^ x;
-	y &= (y >> 1) & occ_mask2(k);
+	uint64_t y;
+	__m64 q, x;
+	x = _mm_cvtsi64x_si64(xx);
+	__m128i t, t2;
+	q = _mm_cvtsi64x_si64(0ul);
+	const __m64 occ_mask2k = _mm_sub_si64(_mm_cvtsi64x_si64(0x5555555555555555ul),
+		_mm_srli_si64(_mm_cvtsi64x_si64(0x1555555555555555ul), ((k&31)<<1)));
 	switch (k&0x60) {
-		case 0x60: y += nucleo_upto5mask(((uint64_t)p[-6]<<32 | p[-5]), x, k);
-			y += nucleo_upto5mask(((uint64_t)p[-4]<<32 | p[-3]), x, k);
-			y = nucleo_combine_3mask(k, y);
-			y += nucleo_upto3mask(((uint64_t)p[-2]<<32 | p[-1]), x, k);
-			return nucleo_combine_f0mask(k, y);
-		case 0x40: y += nucleo_upto5mask(((uint64_t)p[-4]<<32 | p[-3]), x, k);
-		case 0x20: y += nucleo_upto5mask(((uint64_t)p[-2]<<32 | p[-1]), x, k);
-			y = nucleo_combine_3mask(k, y);
+		case 0x60:
+			t = _mm_set_epi32(p[-2], p[-1], p[0], p[1]);
+			t2 = _mm_set_epi32(p[-6], p[-5], p[-4], p[-3]);
+			t2 = _mm_nucleo_pre5mask(t2, x);
+			t = _mm_nucleo_pre5mask(t, x);
+
+			t = _mm_and_si128(t, _mm_set_epi64(
+				_mm_cvtsi64x_si64(0x5555555555555555ul), occ_mask2k));
+			t2 = _mm_and_si128_set1_epi64i(t2, 0x5555555555555555ul);
+
+			t = _mm_add_epi64(t, t2);
+
+			t = _mm_cn_mask_si128(t, t2, 2, 0x3333333333333333ul);
+			t = _mm_cn_mask_si128(t, t2, 4, 0x0f0f0f0f0f0f0f0ful);
+			y = _mm_extract_epi64(t, 0) + _mm_extract_epi64(t, 1);
+
+			return y;
+		case 0x40:
+			q = _mm_set_pi32(p[0], p[1]);
+			q = _mm_xor_si64(q, x);
+			q = _mm_and_si64(q, _mm_srli_si64(q, 1));
+			q =  _mm_and_si64(q, occ_mask2k);
+
+			t = _mm_set_epi32(p[-4], p[-3], p[-2], p[-1]);
+			t = _mm_nucleo_pre5mask(t, x);
+			t = _mm_and_si128_set1_epi64i(t, 0x5555555555555555ul);
+
+			t = _mm_add_epi64(t, _mm_set_epi64(_mm_cvtsi64x_si64(0x0ul), q));
+			t = _mm_cn_mask_si128(t, t2, 2, 0x3333333333333333ul);
+			q = _mm_cvtsi64x_si64(_mm_extract_epi64(t, 1)); // high
+			q = _mm_add_si64(q, _mm_movepi64_pi64(t)); // + add low
 			break;
-		case 0x00: y = nucleo_3mask(y);
+		case 0x20:
+			t = _mm_set_epi32(p[-2], p[-1], p[0], p[1]);
+			t = _mm_nucleo_pre5mask(t, x);
+
+			t = _mm_and_si128(t, _mm_set_epi64(
+				_mm_cvtsi64x_si64(0x5555555555555555ul), occ_mask2k));
+
+			t = _mm_cn_mask_si128(t, t2, 2, 0x3333333333333333ul);
+			q = _mm_cvtsi64x_si64(_mm_extract_epi64(t, 1)); // high
+			q = _mm_add_si64(q, _mm_movepi64_pi64(t)); // + add low
+			break;
+		default: //case 0x00:
+			q = _mm_set_pi32(p[0], p[1]);
+			q = _mm_xor_si64(q, x);
+			q = _mm_and_si64(q, _mm_srli_si64(q, 1));
+			q =  _mm_and_si64(q, occ_mask2k);
+
+			q = _mm_n_xmask_si64(q, 2, 0x3333333333333333ul);
 	}
-	return nucleo_f0mask(y);
+	q = _mm_n_xmask_si64(q, 4, 0x0f0f0f0f0f0f0f0ful);
+	return _mm_cvtsi64_si64x(q);
 }
 
 static inline bwtint_t bwt_invPsi(const bwt_t *bwt, bwtint_t isa)
