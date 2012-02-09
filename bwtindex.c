@@ -65,7 +65,8 @@ int bwa_index(int argc, char *argv[])
 		fprintf(stderr, "Usage:   bwa index [-a bwtsw|div|is] [-c] <in.fasta>\n\n");
 		fprintf(stderr, "Options: -a STR    BWT construction algorithm: bwtsw or is [is]\n");
 		fprintf(stderr, "         -p STR    prefix of the index [same as fasta name]\n");
-		fprintf(stderr, "         -c        build color-space index\n\n");
+//		fprintf(stderr, "         -c        build color-space index\n");
+		fprintf(stderr, "\n");
 		fprintf(stderr,	"Warning: `-a bwtsw' does not work for short genomes, while `-a is' and\n");
 		fprintf(stderr, "         `-a div' do not work not for long genomes. Please choose `-a'\n");
 		fprintf(stderr, "         according to the length of the genome.\n\n");
@@ -80,7 +81,7 @@ int bwa_index(int argc, char *argv[])
 		gzFile fp = xzopen(argv[optind], "r");
 		t = clock();
 		fprintf(stderr, "[bwa_index] Pack FASTA... ");
-		l_pac = bns_fasta2bntseq(fp, prefix);
+		l_pac = bns_fasta2bntseq(fp, prefix, 0);
 		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
 		gzclose(fp);
 	} else { // color indexing
@@ -88,7 +89,7 @@ int bwa_index(int argc, char *argv[])
 		strcat(strcpy(str, prefix), ".nt");
 		t = clock();
 		fprintf(stderr, "[bwa_index] Pack nucleotide FASTA... ");
-		l_pac = bns_fasta2bntseq(fp, str);
+		l_pac = bns_fasta2bntseq(fp, str, 0);
 		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
 		gzclose(fp);
 		{
@@ -100,38 +101,12 @@ int bwa_index(int argc, char *argv[])
 			fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
 		}
 	}
-	if (l_pac > 0xffffffffu) {
-		fprintf(stderr, "[%s] BWA only works with reference sequences shorter than 4GB in total. Abort!\n", __func__);
-		return 1;
-	}
 	if (algo_type == 0) algo_type = l_pac > 50000000? 2 : 3; // set the algorithm for generating BWT
-	{
-		strcpy(str, prefix); strcat(str, ".pac");
-		strcpy(str2, prefix); strcat(str2, ".rpac");
-		t = clock();
-		fprintf(stderr, "[bwa_index] Reverse the packed sequence... ");
-		bwa_pac_rev_core(str, str2);
-		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
-	}
 	{
 		strcpy(str, prefix); strcat(str, ".pac");
 		strcpy(str2, prefix); strcat(str2, ".bwt");
 		t = clock();
 		fprintf(stderr, "[bwa_index] Construct BWT for the packed sequence...\n");
-		if (algo_type == 2) bwt_bwtgen(str, str2);
-		else if (algo_type == 1 || algo_type == 3) {
-			bwt_t *bwt;
-			bwt = bwt_pac2bwt(str, algo_type == 3);
-			bwt_dump_bwt(str2, bwt);
-			bwt_destroy(bwt);
-		}
-		fprintf(stderr, "[bwa_index] %.2f seconds elapse.\n", (float)(clock() - t) / CLOCKS_PER_SEC);
-	}
-	{
-		strcpy(str, prefix); strcat(str, ".rpac");
-		strcpy(str2, prefix); strcat(str2, ".rbwt");
-		t = clock();
-		fprintf(stderr, "[bwa_index] Construct BWT for the reverse packed sequence...\n");
 		if (algo_type == 2) bwt_bwtgen(str, str2);
 		else if (algo_type == 1 || algo_type == 3) {
 			bwt_t *bwt;
@@ -153,15 +128,12 @@ int bwa_index(int argc, char *argv[])
 		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
 	}
 	{
-		bwt_t *bwt;
-		strcpy(str, prefix); strcat(str, ".rbwt");
+		gzFile fp = xzopen(argv[optind], "r");
 		t = clock();
-		fprintf(stderr, "[bwa_index] Update reverse BWT... ");
-		bwt = bwt_restore_bwt(str);
-		bwt_bwtupdate_core(bwt);
-		bwt_dump_bwt(str, bwt);
-		bwt_destroy(bwt);
+		fprintf(stderr, "[bwa_index] Pack forward-only FASTA... ");
+		l_pac = bns_fasta2bntseq(fp, prefix, 1);
 		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
+		gzclose(fp);
 	}
 	{
 		bwt_t *bwt;
@@ -169,18 +141,6 @@ int bwa_index(int argc, char *argv[])
 		strcpy(str3, prefix); strcat(str3, ".sa");
 		t = clock();
 		fprintf(stderr, "[bwa_index] Construct SA from BWT and Occ... ");
-		bwt = bwt_restore_bwt(str);
-		bwt_cal_sa(bwt, 32);
-		bwt_dump_sa(str3, bwt);
-		bwt_destroy(bwt);
-		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);
-	}
-	{
-		bwt_t *bwt;
-		strcpy(str, prefix); strcat(str, ".rbwt");
-		strcpy(str3, prefix); strcat(str3, ".rsa");
-		t = clock();
-		fprintf(stderr, "[bwa_index] Construct SA from reverse BWT and Occ... ");
 		bwt = bwt_restore_bwt(str);
 		bwt_cal_sa(bwt, 32);
 		bwt_dump_sa(str3, bwt);

@@ -18,7 +18,6 @@
 #define SAM_FR1  64 // this is read one
 #define SAM_FR2 128 // this is read two
 #define SAM_FSC 256 // secondary alignment
-#define SAM_FQF 512 // fails platform/vendor quality checks
 
 #define BWA_AVG_ERR 0.02
 #define BWA_MIN_RDLEN 35 // for read trimming
@@ -35,7 +34,7 @@ typedef struct {
 } bwt_width_t;
 
 typedef struct {
-	uint32_t n_mm:8, n_gapo:8, n_gape:8, a:1;
+	uint32_t n_mm:16, n_gapo:8, n_gape:8;
 	bwtint_t k, l;
 	int score;
 } bwt_aln1_t;
@@ -52,8 +51,8 @@ typedef uint16_t bwa_cigar_t;
 #define __cigar_create(__op, __len) ((__op)<<CIGAR_OP_SHIFT | (__len))
 
 typedef struct {
-	uint32_t pos;
 	uint32_t n_cigar:15, gap:8, mm:8, strand:1;
+	bwtint_t pos;
 	bwa_cigar_t *cigar;
 } bwt_multi1_t;
 
@@ -136,7 +135,7 @@ extern "C" {
 	void bwa_free_read_seq(int n_seqs, bwa_seq_t *seqs);
 
 	int bwa_cal_maxdiff(int l, double err, double thres);
-	void bwa_cal_sa_reg_gap(int tid, bwt_t *const bwt[2], int n_seqs, bwa_seq_t *seqs, const gap_opt_t *opt);
+	void bwa_cal_sa_reg_gap(int tid, bwt_t *const bwt, int n_seqs, bwa_seq_t *seqs, const gap_opt_t *opt);
 
 	void bwa_cs2nt_core(bwa_seq_t *p, bwtint_t l_pac, ubyte_t *pac);
 

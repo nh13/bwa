@@ -9,6 +9,7 @@
 #include "bntseq.h"
 #include "utils.h"
 #include "stdaln.h"
+#include "bwase.h"
 
 typedef struct {
 	int n;
@@ -20,27 +21,34 @@ typedef struct {
 	bwtint_t low, high, high_bayesian;
 } isize_info_t;
 
+typedef struct {
+	uint64_t x, y;
+} b128_t;
+
+#define b128_lt(a, b) ((a).x < (b).x)
+#define b128_eq(a, b) ((a).x == (b).x && (a).y == (b).y)
+#define b128_hash(a) ((uint32_t)(a).x)
+
 #include "khash.h"
-KHASH_MAP_INIT_INT64(64, poslist_t)
+KHASH_INIT(b128, b128_t, poslist_t, 1, b128_hash, b128_eq)
 
 #include "ksort.h"
+KSORT_INIT(b128, b128_t, b128_lt)
 KSORT_INIT_GENERIC(uint64_t)
 
 typedef struct {
-	kvec_t(uint64_t) arr;
-	kvec_t(uint64_t) pos[2];
+	kvec_t(b128_t) arr;
+	kvec_t(b128_t) pos[2];
 	kvec_t(bwt_aln1_t) aln[2];
 } pe_data_t;
 
 #define MIN_HASH_WIDTH 1000
 
 extern int g_log_n[256]; // in bwase.c
-static kh_64_t *g_hash;
+static kh_b128_t *g_hash;
 
-void bwase_initialize();
 void bwa_aln2seq_core(int n_aln, const bwt_aln1_t *aln, bwa_seq_t *s, int set_main, int n_multi);
 void bwa_aln2seq(int n_aln, const bwt_aln1_t *aln, bwa_seq_t *s);
-void bwa_refine_gapped(const bntseq_t *bns, int n_seqs, bwa_seq_t *seqs, ubyte_t *_pacseq, bntseq_t *ntbns);
 int bwa_approx_mapQ(const bwa_seq_t *p, int mm);
 void bwa_print_sam1(const bntseq_t *bns, bwa_seq_t *p, const bwa_seq_t *mate, int mode, int max_top2);
 bntseq_t *bwa_open_nt(const char *prefix);
@@ -151,78 +159,79 @@ static int infer_isize(int n_seqs, bwa_seq_t *seqs[2], isize_info_t *ii, double 
 	for (y = 1.0; y < 10.0; y += 0.01)
 		if (.5 * erfc(y / M_SQRT2) < ap_prior / L * (y * ii->std + ii->avg)) break;
 	ii->high_bayesian = (bwtint_t)(y * ii->std + ii->avg + .499);
-	fprintf(stderr, "[infer_isize] low and high boundaries: %d and %d for estimating avg and std\n", ii->low, ii->high);
+	fprintf(stderr, "[infer_isize] low and high boundaries: %ld and %ld for estimating avg and std\n", (long)ii->low, (long)ii->high);
 	fprintf(stderr, "[infer_isize] inferred external isize from %d pairs: %.3lf +/- %.3lf\n", n, ii->avg, ii->std);
 	fprintf(stderr, "[infer_isize] skewness: %.3lf; kurtosis: %.3lf; ap_prior: %.2e\n", skewness, kurtosis, ii->ap_prior);
-	fprintf(stderr, "[infer_isize] inferred maximum insert size: %d (%.2lf sigma)\n", ii->high_bayesian, y);
+	fprintf(stderr, "[infer_isize] inferred maximum insert size: %ld (%.2lf sigma)\n", (long)ii->high_bayesian, y);
 	return 0;
 }
 
 static int pairing(bwa_seq_t *p[2], pe_data_t *d, const pe_opt_t *opt, int s_mm, const isize_info_t *ii)
 {
 	int i, j, o_n, subo_n, cnt_chg = 0, low_bound = ii->low, max_len;
-	uint64_t last_pos[2][2], o_pos[2], subo_score, o_score;
+	uint64_t o_score, subo_score;
+	b128_t last_pos[2][2], o_pos[2];
 	max_len = p[0]->full_len;
 	if (max_len < p[1]->full_len) max_len = p[1]->full_len;
 	if (low_bound < max_len) low_bound = max_len;
 
 	// here v>=u. When ii is set, we check insert size with ii; otherwise with opt->max_isize
-#define __pairing_aux(u,v) do {											\
-		bwtint_t l = ((v)>>32) + p[(v)&1]->len - ((u)>>32);				\
-		if ((u) != (uint64_t)-1 && (v)>>32 > (u)>>32 && l >= max_len	\
+#define __pairing_aux(u,v) do { \
+		bwtint_t l = (v).x + p[(v).y&1]->len - ((u).x); \
+		if ((u).x != (uint64_t)-1 && (v).x > (u).x && l >= max_len \
 			&& ((ii->high && l <= ii->high_bayesian) || (ii->high == 0 && l <= opt->max_isize))) \
-		{																\
-			uint64_t s = d->aln[(v)&1].a[(uint32_t)(v)>>1].score + d->aln[(u)&1].a[(uint32_t)(u)>>1].score; \
-			s *= 10;													\
+		{ \
+			uint64_t s = d->aln[(v).y&1].a[(v).y>>2].score + d->aln[(u).y&1].a[(u).y>>2].score; \
+			s *= 10; \
 			if (ii->high) s += (int)(-4.343 * log(.5 * erfc(M_SQRT1_2 * fabs(l - ii->avg) / ii->std)) + .499); \
-			s = s<<32 | (uint32_t)hash_64((u)>>32<<32 | (v)>>32);		\
-			if (s>>32 == o_score>>32) ++o_n;							\
-			else if (s>>32 < o_score>>32) { subo_n += o_n; o_n = 1; }	\
-			else ++subo_n;												\
-			if (s < o_score) subo_score = o_score, o_score = s, o_pos[(u)&1] = (u), o_pos[(v)&1] = (v); \
-			else if (s < subo_score) subo_score = s;					\
-		}																\
+			s = s<<32 | (uint32_t)hash_64((u).x<<32 | (v).x); \
+			if (s>>32 == o_score>>32) ++o_n; \
+			else if (s>>32 < o_score>>32) { subo_n += o_n; o_n = 1; } \
+			else ++subo_n; \
+			if (s < o_score) subo_score = o_score, o_score = s, o_pos[(u).y&1] = (u), o_pos[(v).y&1] = (v); \
+			else if (s < subo_score) subo_score = s; \
+		} \
 	} while (0)
 
-#define __pairing_aux2(q, w) do {										\
-		const bwt_aln1_t *r = d->aln[(w)&1].a + ((uint32_t)(w)>>1);		\
-		(q)->extra_flag |= SAM_FPP;										\
-		if ((q)->pos != (w)>>32 || (q)->strand != r->a) {				\
-			(q)->n_mm = r->n_mm; (q)->n_gapo = r->n_gapo; (q)->n_gape = r->n_gape; (q)->strand = r->a; \
-			(q)->score = r->score;										\
-			(q)->pos = (w)>>32;											\
-			if ((q)->mapQ > 0) ++cnt_chg;								\
-		}																\
+#define __pairing_aux2(q, w) do { \
+		const bwt_aln1_t *r = d->aln[(w).y&1].a + ((w).y>>2); \
+		(q)->extra_flag |= SAM_FPP; \
+		if ((q)->pos != (w).x || (q)->strand != ((w).y>>1&1)) { \
+			(q)->n_mm = r->n_mm; (q)->n_gapo = r->n_gapo; (q)->n_gape = r->n_gape; (q)->strand = (w).y>>1&1; \
+			(q)->score = r->score; \
+			(q)->pos = (w).x; \
+			if ((q)->mapQ > 0) ++cnt_chg; \
+		} \
 	} while (0)
 
 	o_score = subo_score = (uint64_t)-1;
 	o_n = subo_n = 0;
-	ks_introsort(uint64_t, d->arr.n, d->arr.a);
-	for (j = 0; j < 2; ++j) last_pos[j][0] = last_pos[j][1] = (uint64_t)-1;
+	ks_introsort(b128, d->arr.n, d->arr.a);
+	for (j = 0; j < 2; ++j) last_pos[j][0].x = last_pos[j][0].y = last_pos[j][1].x = last_pos[j][1].y = (uint64_t)-1;
 	if (opt->type == BWA_PET_STD) {
 		for (i = 0; i < d->arr.n; ++i) {
-			uint64_t x = d->arr.a[i];
-			int strand = d->aln[x&1].a[(uint32_t)x>>1].a;
+			b128_t x = d->arr.a[i];
+			int strand = x.y>>1&1;
 			if (strand == 1) { // reverse strand, then check
-				int y = 1 - (x&1);
+				int y = 1 - (x.y&1);
 				__pairing_aux(last_pos[y][1], x);
 				__pairing_aux(last_pos[y][0], x);
 			} else { // forward strand, then push
-				last_pos[x&1][0] = last_pos[x&1][1];
-				last_pos[x&1][1] = x;
+				last_pos[x.y&1][0] = last_pos[x.y&1][1];
+				last_pos[x.y&1][1] = x;
 			}
 		}
 	} else if (opt->type == BWA_PET_SOLID) {
 		for (i = 0; i < d->arr.n; ++i) {
-			uint64_t x = d->arr.a[i];
-			int strand = d->aln[x&1].a[(uint32_t)x>>1].a;
-			if ((strand^x)&1) { // push
-				int y = 1 - (x&1);
+			b128_t x = d->arr.a[i];
+			int strand = x.y>>1&1;
+			if ((strand^x.y)&1) { // push
+				int y = 1 - (x.y&1);
 				__pairing_aux(last_pos[y][1], x);
 				__pairing_aux(last_pos[y][0], x);
 			} else { // check
-				last_pos[x&1][0] = last_pos[x&1][1];
-				last_pos[x&1][1] = x;
+				last_pos[x.y&1][0] = last_pos[x.y&1][1];
+				last_pos[x.y&1][1] = x;
 			}
 		}
 	} else {
@@ -230,10 +239,9 @@ static int pairing(bwa_seq_t *p[2], pe_data_t *d, const pe_opt_t *opt, int s_mm,
 		exit(1);
 	}
 	// set pairing
-	//fprintf(stderr, "[%d, %d, %d, %d]\n", d->arr.n, (int)(o_score>>32), (int)(subo_score>>32), o_n);
+	//fprintf(stderr, "[%ld, %d, %d, %d]\n", d->arr.n, (int)(o_score>>32), (int)(subo_score>>32), o_n);
 	if (o_score != (uint64_t)-1) {
 		int mapQ_p = 0; // this is the maximum mapping quality when one end is moved
-		int rr[2];
 		//fprintf(stderr, "%d, %d\n", o_n, subo_n);
 		if (o_n == 1) {
 			if (subo_score == (uint64_t)-1) mapQ_p = 29; // no sub-optimal pair
@@ -244,9 +252,7 @@ static int pairing(bwa_seq_t *p[2], pe_data_t *d, const pe_opt_t *opt, int s_mm,
 				if (mapQ_p < 0) mapQ_p = 0;
 			}
 		}
-		rr[0] = d->aln[o_pos[0]&1].a[(uint32_t)o_pos[0]>>1].a;
-		rr[1] = d->aln[o_pos[1]&1].a[(uint32_t)o_pos[1]>>1].a;
-		if ((p[0]->pos == o_pos[0]>>32 && p[0]->strand == rr[0]) && (p[1]->pos == o_pos[1]>>32 && p[1]->strand == rr[1])) { // both ends not moved
+		if ((p[0]->pos == o_pos[0].x && p[0]->strand == (o_pos[0].y>>1&1)) && (p[1]->pos == o_pos[1].x && p[1]->strand == (o_pos[1].y>>1&1))) { // both ends not moved
 			if (p[0]->mapQ > 0 && p[1]->mapQ > 0) {
 				int mapQ = p[0]->mapQ + p[1]->mapQ;
 				if (mapQ > 60) mapQ = 60;
@@ -255,10 +261,10 @@ static int pairing(bwa_seq_t *p[2], pe_data_t *d, const pe_opt_t *opt, int s_mm,
 				if (p[0]->mapQ == 0) p[0]->mapQ = (mapQ_p + 7 < p[1]->mapQ)? mapQ_p + 7 : p[1]->mapQ;
 				if (p[1]->mapQ == 0) p[1]->mapQ = (mapQ_p + 7 < p[0]->mapQ)? mapQ_p + 7 : p[0]->mapQ;
 			}
-		} else if (p[0]->pos == o_pos[0]>>32 && p[0]->strand == rr[0]) { // [1] moved
+		} else if (p[0]->pos == o_pos[0].x && p[0]->strand == (o_pos[0].y>>1&1)) { // [1] moved
 			p[1]->seQ = 0; p[1]->mapQ = p[0]->mapQ;
 			if (p[1]->mapQ > mapQ_p) p[1]->mapQ = mapQ_p;
-		} else if (p[1]->pos == o_pos[1]>>32 && p[1]->strand == rr[1]) { // [0] moved
+		} else if (p[1]->pos == o_pos[1].x && p[1]->strand == (o_pos[1].y>>1&1)) { // [0] moved
 			p[0]->seQ = 0; p[0]->mapQ = p[1]->mapQ;
 			if (p[0]->mapQ > mapQ_p) p[0]->mapQ = mapQ_p;
 		} else { // both ends moved
@@ -277,12 +283,12 @@ typedef struct {
 	kvec_t(bwt_aln1_t) aln;
 } aln_buf_t;
 
-int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa_seq_t *seqs[2], FILE *fp_sa[2], isize_info_t *ii,
+int bwa_cal_pac_pos_pe(const bntseq_t *bns, const char *prefix, bwt_t *const _bwt, int n_seqs, bwa_seq_t *seqs[2], FILE *fp_sa[2], isize_info_t *ii,
 					   const pe_opt_t *opt, const gap_opt_t *gopt, const isize_info_t *last_ii)
 {
 	int i, j, cnt_chg = 0;
 	char str[1024];
-	bwt_t *bwt[2];
+	bwt_t *bwt;
 	pe_data_t *d;
 	aln_buf_t *buf[2];
 
@@ -290,12 +296,10 @@ int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa
 	buf[0] = (aln_buf_t*)calloc(n_seqs, sizeof(aln_buf_t));
 	buf[1] = (aln_buf_t*)calloc(n_seqs, sizeof(aln_buf_t));
 
-	if (_bwt[0] == 0) { // load forward SA
-		strcpy(str, prefix); strcat(str, ".bwt");  bwt[0] = bwt_restore_bwt(str);
-		strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt[0]);
-		strcpy(str, prefix); strcat(str, ".rbwt"); bwt[1] = bwt_restore_bwt(str);
-		strcpy(str, prefix); strcat(str, ".rsa"); bwt_restore_sa(str, bwt[1]);
-	} else bwt[0] = _bwt[0], bwt[1] = _bwt[1];
+	if (_bwt == 0) { // load forward SA
+		strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
+		strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt);
+	} else bwt = _bwt;
 
 	// SE
 	for (i = 0; i != n_seqs; ++i) {
@@ -314,16 +318,17 @@ int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa
 			// generate SE alignment and mapping quality
 			bwa_aln2seq(n_aln, d->aln[j].a, p[j]);
 			if (p[j]->type == BWA_TYPE_UNIQUE || p[j]->type == BWA_TYPE_REPEAT) {
+				int strand;
 				int max_diff = gopt->fnr > 0.0? bwa_cal_maxdiff(p[j]->len, BWA_AVG_ERR, gopt->fnr) : gopt->max_diff;
-				p[j]->pos = p[j]->strand? bwt_sa(bwt[0], p[j]->sa)
-					: bwt[1]->seq_len - (bwt_sa(bwt[1], p[j]->sa) + p[j]->len);
 				p[j]->seQ = p[j]->mapQ = bwa_approx_mapQ(p[j], max_diff);
+				p[j]->pos = bwa_sa2pos(bns, bwt, p[j]->sa, p[j]->len, &strand);
+				p[j]->strand = strand;
 			}
 		}
 	}
 
 	// infer isize
-	infer_isize(n_seqs, seqs, ii, opt->ap_prior, bwt[0]->seq_len);
+	infer_isize(n_seqs, seqs, ii, opt->ap_prior, bwt->seq_len/2);
 	if (ii->avg < 0.0 && last_ii->avg > 0.0) *ii = *last_ii;
 	if (opt->force_isize) {
 		fprintf(stderr, "[%s] discard insert size estimate as user's request.\n", __func__);
@@ -340,8 +345,9 @@ int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa
 		if ((p[0]->type == BWA_TYPE_UNIQUE || p[0]->type == BWA_TYPE_REPEAT)
 			&& (p[1]->type == BWA_TYPE_UNIQUE || p[1]->type == BWA_TYPE_REPEAT))
 		{ // only when both ends mapped
-			uint64_t x;
-			int j, k, n_occ[2];
+			b128_t x;
+			int j, k;
+			long long n_occ[2];
 			for (j = 0; j < 2; ++j) {
 				n_occ[j] = 0;
 				for (k = 0; k < d->aln[j].n; ++k)
@@ -353,27 +359,32 @@ int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa
 				for (k = 0; k < d->aln[j].n; ++k) {
 					bwt_aln1_t *r = d->aln[j].a + k;
 					bwtint_t l;
-					if (r->l - r->k + 1 >= MIN_HASH_WIDTH) { // then check hash table
-						uint64_t key = (uint64_t)r->k<<32 | r->l;
+					if (0 && r->l - r->k + 1 >= MIN_HASH_WIDTH) { // then check hash table
+						b128_t key;
 						int ret;
-						khint_t iter = kh_put(64, g_hash, key, &ret);
+						key.x = r->k; key.y = r->l;
+						khint_t iter = kh_put(b128, g_hash, key, &ret);
 						if (ret) { // not in the hash table; ret must equal 1 as we never remove elements
 							poslist_t *z = &kh_val(g_hash, iter);
 							z->n = r->l - r->k + 1;
 							z->a = (bwtint_t*)malloc(sizeof(bwtint_t) * z->n);
-							for (l = r->k; l <= r->l; ++l)
-								z->a[l - r->k] = r->a? bwt_sa(bwt[0], l) : bwt[1]->seq_len - (bwt_sa(bwt[1], l) + p[j]->len);
+							for (l = r->k; l <= r->l; ++l) {
+								int strand;
+								z->a[l - r->k] = bwa_sa2pos(bns, bwt, l, p[j]->len, &strand)<<1;
+								z->a[l - r->k] |= strand;
+							}
 						}
 						for (l = 0; l < kh_val(g_hash, iter).n; ++l) {
-							x = kh_val(g_hash, iter).a[l];
-							x = x<<32 | k<<1 | j;
-							kv_push(uint64_t, d->arr, x);
+							x.x = kh_val(g_hash, iter).a[l]>>1;
+							x.y = k<<2 | (kh_val(g_hash, iter).a[l]&1)<<1 | j;
+							kv_push(b128_t, d->arr, x);
 						}
 					} else { // then calculate on the fly
 						for (l = r->k; l <= r->l; ++l) {
-							x = r->a? bwt_sa(bwt[0], l) : bwt[1]->seq_len - (bwt_sa(bwt[1], l) + p[j]->len);
-							x = x<<32 | k<<1 | j;
-							kv_push(uint64_t, d->arr, x);
+							int strand;
+							x.x = bwa_sa2pos(bns, bwt, l, p[j]->len, &strand);
+							x.y = k<<2 | strand<<1 | j;
+							kv_push(b128_t, d->arr, x);
 						}
 					}
 				}
@@ -384,14 +395,19 @@ int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa
 		if (opt->N_multi || opt->n_multi) {
 			for (j = 0; j < 2; ++j) {
 				if (p[j]->type != BWA_TYPE_NO_MATCH) {
-					int k;
+					int k, n_multi;
 					if (!(p[j]->extra_flag&SAM_FPP) && p[1-j]->type != BWA_TYPE_NO_MATCH) {
 						bwa_aln2seq_core(d->aln[j].n, d->aln[j].a, p[j], 0, p[j]->c1+p[j]->c2-1 > opt->N_multi? opt->n_multi : opt->N_multi);
 					} else bwa_aln2seq_core(d->aln[j].n, d->aln[j].a, p[j], 0, opt->n_multi);
-					for (k = 0; k < p[j]->n_multi; ++k) {
+					for (k = 0, n_multi = 0; k < p[j]->n_multi; ++k) {
+						int strand;
 						bwt_multi1_t *q = p[j]->multi + k;
-						q->pos = q->strand? bwt_sa(bwt[0], q->pos) : bwt[1]->seq_len - (bwt_sa(bwt[1], q->pos) + p[j]->len);
+						q->pos = bwa_sa2pos(bns, bwt, q->pos, p[j]->len, &strand);
+						q->strand = strand;
+						if (q->pos != p[j]->pos)
+							p[j]->multi[n_multi++] = *q;
 					}
+					p[j]->n_multi = n_multi;
 				}
 			}
 		}
@@ -403,9 +419,7 @@ int bwa_cal_pac_pos_pe(const char *prefix, bwt_t *const _bwt[2], int n_seqs, bwa
 		kv_destroy(buf[1][i].aln);
 	}
 	free(buf[0]); free(buf[1]);
-	if (_bwt[0] == 0) {
-		bwt_destroy(bwt[0]); bwt_destroy(bwt[1]);
-	}
+	if (_bwt == 0) bwt_destroy(bwt);
 	kv_destroy(d->arr);
 	kv_destroy(d->pos[0]); kv_destroy(d->pos[1]);
 	kv_destroy(d->aln[0]); kv_destroy(d->aln[1]);
@@ -423,7 +437,7 @@ bwa_cigar_t *bwa_sw_core(bwtint_t l_pac, const ubyte_t *pacseq, int len, const u
 	bwa_cigar_t *cigar = 0;
 	ubyte_t *ref_seq;
 	bwtint_t k, x, y, l;
-	int path_len, ret;
+	int path_len, ret, subo;
 	AlnParam ap = aln_param_bwa;
 	path_t *path, *p;
 
@@ -440,8 +454,8 @@ bwa_cigar_t *bwa_sw_core(bwtint_t l_pac, const ubyte_t *pacseq, int len, const u
 	path = (path_t*)calloc(l+len, sizeof(path_t));
 
 	// do alignment
-	ret = aln_local_core(ref_seq, l, (ubyte_t*)seq, len, &ap, path, &path_len, 1, 0);
-	if (ret < 0) {
+	ret = aln_local_core(ref_seq, l, (ubyte_t*)seq, len, &ap, path, &path_len, 1, &subo);
+	if (ret < 0 || subo == ret) { // no hit or tandem hits
 		free(path); free(cigar); free(ref_seq); *n_cigar = 0;
 		return 0;
 	}
@@ -655,18 +669,18 @@ void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const f
 	khint_t iter;
 	isize_info_t last_ii; // this is for the last batch of reads
 	char str[1024];
-	bwt_t *bwt[2];
+	bwt_t *bwt;
 	uint8_t *pac;
 
 	// initialization
 	bwase_initialize(); // initialize g_log_n[] in bwase.c
-	pac = 0; bwt[0] = bwt[1] = 0;
+	pac = 0; bwt = 0;
 	for (i = 1; i != 256; ++i) g_log_n[i] = (int)(4.343 * log(i) + 0.5);
 	bns = bns_restore(prefix);
 	srand48(bns->seed);
 	fp_sa[0] = xopen(fn_sa[0], "r");
 	fp_sa[1] = xopen(fn_sa[1], "r");
-	g_hash = kh_init(64);
+	g_hash = kh_init(b128);
 	last_ii.avg = -1.0;
 
 	fread(&opt, sizeof(gap_opt_t), 1, fp_sa[0]);
@@ -679,10 +693,8 @@ void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const f
 		ntbns = bwa_open_nt(prefix);
 	} else { // for Illumina alignment only
 		if (popt->is_preload) {
-			strcpy(str, prefix); strcat(str, ".bwt");  bwt[0] = bwt_restore_bwt(str);
-			strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt[0]);
-			strcpy(str, prefix); strcat(str, ".rbwt"); bwt[1] = bwt_restore_bwt(str);
-			strcpy(str, prefix); strcat(str, ".rsa"); bwt_restore_sa(str, bwt[1]);
+			strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
+			strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt);
 			pac = (ubyte_t*)calloc(bns->l_pac/4+1, 1);
 			rewind(bns->fp_pac);
 			fread(pac, 1, bns->l_pac/4+1, bns->fp_pac);
@@ -702,7 +714,7 @@ void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const f
 		t = clock();
 
 		fprintf(stderr, "[bwa_sai2sam_pe_core] convert to sequence coordinate... \n");
-		cnt_chg = bwa_cal_pac_pos_pe(prefix, bwt, n_seqs, seqs, fp_sa, &ii, popt, &opt, &last_ii);
+		cnt_chg = bwa_cal_pac_pos_pe(bns, prefix, bwt, n_seqs, seqs, fp_sa, &ii, popt, &opt, &last_ii);
 		fprintf(stderr, "[bwa_sai2sam_pe_core] time elapses: %.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC); t = clock();
 		fprintf(stderr, "[bwa_sai2sam_pe_core] changing coordinates of %d alignments.\n", cnt_chg);
 
@@ -744,9 +756,9 @@ void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const f
 	}
 	for (iter = kh_begin(g_hash); iter != kh_end(g_hash); ++iter)
 		if (kh_exist(g_hash, iter)) free(kh_val(g_hash, iter).a);
-	kh_destroy(64, g_hash);
+	kh_destroy(b128, g_hash);
 	if (pac) {
-		free(pac); bwt_destroy(bwt[0]); bwt_destroy(bwt[1]);
+		free(pac); bwt_destroy(bwt);
 	}
 }
 

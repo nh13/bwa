@@ -3,7 +3,6 @@
 #include <string.h>
 #include "bwtgap.h"
 #include "bwtaln.h"
-#include "utils.h"
 
 #define STATE_M 0
 #define STATE_I 1
@@ -51,7 +50,7 @@ static inline void gap_push(gap_stack_t *stack, int i, bwtint_t k, bwtint_t l, i
 	gap_stack1_t *q;
 	score = aln_score(n_mm, n_gapo, n_gape, opt);
 	q = stack->stacks + score;
-	if (unlikely(q->n_entries == q->m_entries)) {
+	if (q->n_entries == q->m_entries) {
 		q->m_entries <<= 1;
 		q->stack = (gap_entry_t*)realloc(q->stack, sizeof(gap_entry_t) * q->m_entries);
 	}
@@ -71,14 +70,12 @@ static inline void gap_pop(gap_stack_t *stack, gap_entry_t *e)
 	*e = q->stack[q->n_entries - 1];
 	--(q->n_entries);
 	--(stack->n_entries);
-	if (q->n_entries == 0 && likely(stack->n_entries)) { // reset best
+	if (q->n_entries == 0 && stack->n_entries) { // reset best
 		int i;
 		for (i = stack->best + 1; i < stack->n_stacks; ++i)
 			if (stack->stacks[i].n_entries != 0) break;
 		stack->best = i;
-	} else if (unlikely(stack->n_entries == 0)) {
-		stack->best = stack->n_stacks;
-	}
+	} else if (stack->n_entries == 0) stack->best = stack->n_stacks;
 }
 
 static inline void gap_shadow(int x, int len, bwtint_t max, int last_diff_pos, bwt_width_t *w)
@@ -104,8 +101,8 @@ static inline int int_log2(uint32_t v)
 	return c;
 }
 
-bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], bwt_width_t *w[2],
-						  bwt_width_t *seed_w[2], const gap_opt_t *opt, int *_n_aln, gap_stack_t *stack)
+bwt_aln1_t *bwt_match_gap(bwt_t *const bwt, int len, const ubyte_t *seq, bwt_width_t *width,
+						  bwt_width_t *seed_width, const gap_opt_t *opt, int *_n_aln, gap_stack_t *stack)
 {
 	int best_score = aln_score(opt->max_diff+1, opt->max_gapo+1, opt->max_gape+1, opt);
 	int best_diff = opt->max_diff + 1, max_diff = opt->max_diff;
@@ -118,7 +115,7 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 
 	// check whether there are too many N
 	for (j = _j = 0; j < len; ++j)
-		if (seq[0][j] > 3) ++_j;
+		if (seq[j] > 3) ++_j;
 	if (_j > max_diff) {
 		*_n_aln = n_aln;
 		return aln;
@@ -126,43 +123,39 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 
 	//for (j = 0; j != len; ++j) printf("#0 %d: [%d,%u]\t[%d,%u]\n", j, w[0][j].bid, w[0][j].w, w[1][j].bid, w[1][j].w);
 	gap_reset_stack(stack); // reset stack
-	gap_push(stack, len, 0, bwts[0]->seq_len, 0, 0, 0, 0, 0, opt);
-	gap_push(stack, 1 << 20 | len, 0, bwts[0]->seq_len, 0, 0, 0, 0, 0, opt);
+	gap_push(stack, len, 0, bwt->seq_len, 0, 0, 0, 0, 0, opt);
 
 	while (stack->n_entries) {
 		gap_entry_t e;
-		int a, i, m, hit_found, allow_diff, allow_M, tmp;
+		int i, m, m_seed = 0, hit_found, allow_diff, allow_M, tmp;
 		bwtint_t k, l, cnt_k[4], cnt_l[4], occ;
-		const bwt_t *bwt;
-		const ubyte_t *str;
-		bwt_width_t *width;
 
 		if (max_entries < stack->n_entries) max_entries = stack->n_entries;
 		if (stack->n_entries > opt->max_entries) break;
 		gap_pop(stack, &e); // get the best entry
 		k = e.k; l = e.l; // SA interval
-		a = e.info>>20&1; i = e.info&0xffff; // strand, length
+		i = e.info&0xffff; // length
 		if (!(opt->mode & BWA_MODE_NONSTOP) && e.info>>21 > best_score + opt->s_mm) break; // no need to proceed
 
 		m = max_diff - (e.n_mm + e.n_gapo);
 		if (opt->mode & BWA_MODE_GAPE) m -= e.n_gape;
-		if (unlikely(m < 0)) continue;
-		bwt = bwts[1-a]; str = seq[a]; width = w[a];
+		if (m < 0) continue;
+		if (seed_width) { // apply seeding
+			m_seed = opt->max_seed_diff - (e.n_mm + e.n_gapo);
+			if (opt->mode & BWA_MODE_GAPE) m_seed -= e.n_gape;
+		}
 		//printf("#1\t[%d,%d,%d,%c]\t[%d,%d,%d]\t[%u,%u]\t[%u,%u]\t%d\n", stack->n_entries, a, i, "MID"[e.state], e.n_mm, e.n_gapo, e.n_gape, width[i-1].bid, width[i-1].w, k, l, e.last_diff_pos);
 		if (i > 0 && m < width[i-1].bid) continue;
 
 		// check whether a hit is found
 		hit_found = 0;
-		if (unlikely(i == 0)) {
-			hit_found = 1;
-		}
+		if (i == 0) hit_found = 1;
 		else if (m == 0 && (e.state == STATE_M || (opt->mode&BWA_MODE_GAPE) || e.n_gape == opt->max_gape)) { // no diff allowed
-			if (likely(!bwt_match_exact_alt(bwt, i, str, &k, &l)))
-				continue; // no hit, skip
-			hit_found = 1;
+			if (bwt_match_exact_alt(bwt, i, seq, &k, &l)) hit_found = 1;
+			else continue; // no hit, skip
 		}
 
-		if (unlikely(hit_found)) { // action for found hits
+		if (hit_found) { // action for found hits
 			int score = aln_score(e.n_mm, e.n_gapo, e.n_gape, opt);
 			int do_add = 1;
 			//printf("#2 hits found: %d:(%u,%u)\n", e.n_mm+e.n_gapo, k, l);
@@ -182,14 +175,14 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 			}
 			if (do_add) { // append
 				bwt_aln1_t *p;
-				gap_shadow(l - k + 1, len, bwt->seq_len, e.last_diff_pos&0xffff, width);
+				gap_shadow(l - k + 1, len, bwt->seq_len, e.last_diff_pos, width);
 				if (n_aln == m_aln) {
 					m_aln <<= 1;
 					aln = (bwt_aln1_t*)realloc(aln, m_aln * sizeof(bwt_aln1_t));
 					memset(aln + m_aln/2, 0, m_aln/2*sizeof(bwt_aln1_t));
 				}
 				p = aln + n_aln;
-				p->n_mm = e.n_mm; p->n_gapo = e.n_gapo; p->n_gape = e.n_gape; p->a = a;
+				p->n_mm = e.n_mm; p->n_gapo = e.n_gapo; p->n_gape = e.n_gape;
 				p->k = k; p->l = l;
 				p->score = score;
 				++n_aln;
@@ -202,33 +195,19 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 		occ = l - k + 1;
 		// test whether diff is allowed
 		allow_diff = allow_M = 1;
-		if (likely(i > 0)) {
-			--m;
+		if (i > 0) {
 			int ii = i - (len - opt->seed_len);
-			if (width[i-1].bid > m) allow_M = allow_diff = 0;
-			else if (width[i-1].bid == m && width[i].bid == m && width[i-1].w == width[i].w) allow_M = 0;
-			if (seed_w && ii > 0) {
-				width = seed_w[a];
-				m += opt->max_seed_diff - max_diff;
-				if (width[ii-1].bid > m) allow_M = allow_diff = 0;
-				else if (width[ii-1].bid == m && width[ii].bid == m
-						 && width[ii-1].w == width[ii].w)
-					allow_M = 0;
-				width = w[a];
+			if (width[i-1].bid > m-1) allow_diff = 0;
+			else if (width[i-1].bid == m-1 && width[i].bid == m-1 && width[i-1].w == width[i].w) allow_M = 0;
+			if (seed_width && ii > 0) {
+				if (seed_width[ii-1].bid > m_seed-1) allow_diff = 0;
+				else if (seed_width[ii-1].bid == m_seed-1 && seed_width[ii].bid == m_seed-1
+						 && seed_width[ii-1].w == seed_width[ii].w) allow_M = 0;
 			}
 		}
 		// indels
-		if (allow_diff) {
-			tmp = e.n_gape + e.n_gapo;
-			if (opt->mode & BWA_MODE_LOGGAP)
-				tmp = int_log2(tmp)/2+1;
-			tmp = (i >= opt->indel_end_skip + tmp && len - i >= opt->indel_end_skip + tmp);
-		} else {
-			tmp = 0;
-		}
-		int c = str[i];
-		i = a << 20 | i;
-		if (tmp) {
+		tmp = (opt->mode & BWA_MODE_LOGGAP)? int_log2(e.n_gape + e.n_gapo)/2+1 : e.n_gapo + e.n_gape;
+		if (allow_diff && i >= opt->indel_end_skip + tmp && len - i >= opt->indel_end_skip + tmp) {
 			if (e.state == STATE_M) { // gap open
 				if (e.n_gapo < opt->max_gapo) { // gap open is allowed
 					// insertion
@@ -256,15 +235,16 @@ bwt_aln1_t *bwt_match_gap(bwt_t *const bwts[2], int len, const ubyte_t *seq[2], 
 			}
 		}
 		// mismatches
-		if (allow_M) { // mismatch is allowed
+		if (allow_diff && allow_M) { // mismatch is allowed
 			for (j = 1; j <= 4; ++j) {
-				int cc = (c + j) & 3;
-				int is_mm = (j != 4 || c > 3);
-				k = bwt->L2[cc] + cnt_k[cc] + 1;
-				l = bwt->L2[cc] + cnt_l[cc];
+				int c = (seq[i] + j) & 3;
+				int is_mm = (j != 4 || seq[i] > 3);
+				k = bwt->L2[c] + cnt_k[c] + 1;
+				l = bwt->L2[c] + cnt_l[c];
 				if (k <= l) gap_push(stack, i, k, l, e.n_mm + is_mm, e.n_gapo, e.n_gape, STATE_M, is_mm, opt);
 			}
-		} else if (likely(c < 4)) { // try exact match only
+		} else if (seq[i] < 4) { // try exact match only
+			int c = seq[i] & 3;
 			k = bwt->L2[c] + cnt_k[c] + 1;
 			l = bwt->L2[c] + cnt_l[c];
 			if (k <= l) gap_push(stack, i, k, l, e.n_mm, e.n_gapo, e.n_gape, STATE_M, 0, opt);

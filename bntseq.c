@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
+#include <unistd.h>
 #include "bntseq.h"
 #include "main.h"
 #include "utils.h"
@@ -163,16 +164,67 @@ void bns_destroy(bntseq_t *bns)
 	}
 }
 
-int64_t bns_fasta2bntseq(gzFile fp_fa, const char *prefix)
+#define _set_pac(pac, l, c) ((pac)[(l)>>2] |= (c)<<((~(l)&3)<<1))
+#define _get_pac(pac, l) ((pac)[(l)>>2]>>((~(l)&3)<<1)&3)
+
+static uint8_t *add1(const kseq_t *seq, bntseq_t *bns, uint8_t *pac, int64_t *m_pac, int *m_seqs, int *m_holes, bntamb1_t **q)
 {
+	bntann1_t *p;
+	int i, lasts;
+	if (bns->n_seqs == *m_seqs) {
+		*m_seqs <<= 1;
+		bns->anns = (bntann1_t*)realloc(bns->anns, *m_seqs * sizeof(bntann1_t));
+	}
+	p = bns->anns + bns->n_seqs;
+	p->name = strdup((char*)seq->name.s);
+	p->anno = seq->comment.s? strdup((char*)seq->comment.s) : strdup("(null)");
+	p->gi = 0; p->len = seq->seq.l;
+	p->offset = (bns->n_seqs == 0)? 0 : (p-1)->offset + (p-1)->len;
+	p->n_ambs = 0;
+	for (i = lasts = 0; i < seq->seq.l; ++i) {
+		int c = nst_nt4_table[(int)seq->seq.s[i]];
+		if (c >= 4) { // N
+			if (lasts == seq->seq.s[i]) { // contiguous N
+				++(*q)->len;
+			} else {
+				if (bns->n_holes == *m_holes) {
+					(*m_holes) <<= 1;
+					bns->ambs = (bntamb1_t*)realloc(bns->ambs, (*m_holes) * sizeof(bntamb1_t));
+				}
+				*q = bns->ambs + bns->n_holes;
+				(*q)->len = 1;
+				(*q)->offset = p->offset + i;
+				(*q)->amb = seq->seq.s[i];
+				++p->n_ambs;
+				++bns->n_holes;
+			}
+		}
+		lasts = seq->seq.s[i];
+		{ // fill buffer
+			if (c >= 4) c = lrand48()&3;
+			if (bns->l_pac == *m_pac) { // double the pac size
+				*m_pac <<= 1;
+				pac = realloc(pac, *m_pac/4);
+				memset(pac + bns->l_pac/4, 0, (*m_pac - bns->l_pac)/4);
+			}
+			_set_pac(pac, bns->l_pac, c);
+			++bns->l_pac;
+		}
+	}
+	++bns->n_seqs;
+	return pac;
+}
+
+int64_t bns_fasta2bntseq(gzFile fp_fa, const char *prefix, int for_only)
+{
+	extern void seq_reverse(int len, ubyte_t *seq, int is_comp); // in bwaseqio.c
 	kseq_t *seq;
 	char name[1024];
 	bntseq_t *bns;
+	uint8_t *pac = 0;
+	int32_t m_seqs, m_holes;
+	int64_t ret = -1, m_pac, l;
 	bntamb1_t *q;
-	int l_buf;
-	unsigned char buf[0x10000];
-	int32_t m_seqs, m_holes, l, i;
-	int64_t ret = -1;
 	FILE *fp;
 
 	// initialization
@@ -180,66 +232,26 @@ int64_t bns_fasta2bntseq(gzFile fp_fa, const char *prefix)
 	bns = (bntseq_t*)calloc(1, sizeof(bntseq_t));
 	bns->seed = 11; // fixed seed for random generator
 	srand48(bns->seed);
-	m_seqs = m_holes = 8;
+	m_seqs = m_holes = 8; m_pac = 0x10000;
 	bns->anns = (bntann1_t*)calloc(m_seqs, sizeof(bntann1_t));
 	bns->ambs = (bntamb1_t*)calloc(m_holes, sizeof(bntamb1_t));
+	pac = calloc(m_pac/4, 1);
 	q = bns->ambs;
-	l_buf = 0;
 	strcpy(name, prefix); strcat(name, ".pac");
 	fp = xopen(name, "wb");
-	memset(buf, 0, 0x10000);
 	// read sequences
-	while ((l = kseq_read(seq)) >= 0) {
-		bntann1_t *p;
-		int lasts;
-		if (bns->n_seqs == m_seqs) {
-			m_seqs <<= 1;
-			bns->anns = (bntann1_t*)realloc(bns->anns, m_seqs * sizeof(bntann1_t));
-		}
-		p = bns->anns + bns->n_seqs;
-		p->name = strdup((char*)seq->name.s);
-		p->anno = seq->comment.s? strdup((char*)seq->comment.s) : strdup("(null)");
-		p->gi = 0; p->len = l;
-		p->offset = (bns->n_seqs == 0)? 0 : (p-1)->offset + (p-1)->len;
-		p->n_ambs = 0;
-		for (i = 0, lasts = 0; i < l; ++i) {
-			int c = nst_nt4_table[(int)seq->seq.s[i]];
-			if (c >= 4) { // N
-				if (lasts == seq->seq.s[i]) { // contiguous N
-					++q->len;
-				} else {
-					if (bns->n_holes == m_holes) {
-						m_holes <<= 1;
-						bns->ambs = (bntamb1_t*)realloc(bns->ambs, m_holes * sizeof(bntamb1_t));
-					}
-					q = bns->ambs + bns->n_holes;
-					q->len = 1;
-					q->offset = p->offset + i;
-					q->amb = seq->seq.s[i];
-					++p->n_ambs;
-					++bns->n_holes;
-				}
-			}
-			lasts = seq->seq.s[i];
-			{ // fill buffer
-				if (c >= 4) c = lrand48()&0x3;
-				if (l_buf == 0x40000) {
-					fwrite(buf, 1, 0x10000, fp);
-					memset(buf, 0, 0x10000);
-					l_buf = 0;
-				}
-				buf[l_buf>>2] |= c << ((3 - (l_buf&3)) << 1);
-				++l_buf;
-			}
-		}
-		++bns->n_seqs;
-		bns->l_pac += seq->seq.l;
+	while (kseq_read(seq) >= 0) pac = add1(seq, bns, pac, &m_pac, &m_seqs, &m_holes, &q);
+	if (!for_only) { // add the reverse complemented sequence
+		m_pac = (bns->l_pac * 2 + 3) / 4 * 4;
+		pac = realloc(pac, m_pac/4);
+		memset(pac + (bns->l_pac+3)/4, 0, (m_pac - (bns->l_pac+3)/4*4) / 4);
+		for (l = bns->l_pac - 1; l >= 0; --l, ++bns->l_pac)
+			_set_pac(pac, bns->l_pac, 3-_get_pac(pac, l));
 	}
-	xassert(bns->l_pac, "zero length sequence.");
 	ret = bns->l_pac;
 	{ // finalize .pac file
 		ubyte_t ct;
-		fwrite(buf, 1, (l_buf>>2) + ((l_buf&3) == 0? 0 : 1), fp);
+		fwrite(pac, 1, (bns->l_pac>>2) + ((bns->l_pac&3) == 0? 0 : 1), fp);
 		// the following codes make the pac file size always (l_pac/4+1+1)
 		if (bns->l_pac % 4 == 0) {
 			ct = 0;
@@ -253,51 +265,56 @@ int64_t bns_fasta2bntseq(gzFile fp_fa, const char *prefix)
 	bns_dump(bns, prefix);
 	bns_destroy(bns);
 	kseq_destroy(seq);
+	free(pac);
 	return ret;
 }
 
 int bwa_fa2pac(int argc, char *argv[])
 {
+	int c, for_only = 0;
 	gzFile fp;
-	if (argc < 2) {
-		fprintf(stderr, "Usage: bwa fa2pac <in.fasta> [<out.prefix>]\n");
+	while ((c = getopt(argc, argv, "f")) >= 0) {
+		switch (c) {
+			case 'f': for_only = 1; break;
+		}
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: bwa fa2pac [-f] <in.fasta> [<out.prefix>]\n");
 		return 1;
 	}
-	fp = xzopen(argv[1], "r");
-	bns_fasta2bntseq(fp, (argc < 3)? argv[1] : argv[2]);
+	fp = xzopen(argv[optind], "r");
+	bns_fasta2bntseq(fp, (optind+1 < argc)? argv[optind+1] : argv[optind], for_only);
 	gzclose(fp);
 	return 0;
 }
 
-int bns_coor_pac2real(const bntseq_t *bns, int64_t pac_coor, int len, int32_t *real_seq)
+int bns_cnt_ambi(const bntseq_t *bns, int64_t pos_f, int len, int *ref_id)
 {
 	int left, mid, right, nn;
-	if (pac_coor >= bns->l_pac)
-		err_fatal("bns_coor_pac2real", "bug! Coordinate is longer than sequence (%lld>=%lld).", pac_coor, bns->l_pac);
-	// binary search for the sequence ID. Note that this is a bit different from the following one...
-	left = 0; mid = 0; right = bns->n_seqs;
-	while (left < right) {
-		mid = (left + right) >> 1;
-		if (pac_coor >= bns->anns[mid].offset) {
-			if (mid == bns->n_seqs - 1) break;
-			if (pac_coor < bns->anns[mid+1].offset) break;
-			left = mid + 1;
-		} else right = mid;
+	if (ref_id) {
+		left = 0; mid = 0; right = bns->n_seqs;
+		while (left < right) {
+			mid = (left + right) >> 1;
+			if (pos_f >= bns->anns[mid].offset) {
+				if (mid == bns->n_seqs - 1) break;
+				if (pos_f < bns->anns[mid+1].offset) break; // bracketed
+				left = mid + 1;
+			} else right = mid;
+		}
+		*ref_id = mid;
 	}
-	*real_seq = mid;
-	// binary search for holes
 	left = 0; right = bns->n_holes; nn = 0;
 	while (left < right) {
-		int64_t mid = (left + right) >> 1;
-		if (pac_coor >= bns->ambs[mid].offset + bns->ambs[mid].len) left = mid + 1;
-		else if (pac_coor + len <= bns->ambs[mid].offset) right = mid;
+		mid = (left + right) >> 1;
+		if (pos_f >= bns->ambs[mid].offset + bns->ambs[mid].len) left = mid + 1;
+		else if (pos_f + len <= bns->ambs[mid].offset) right = mid;
 		else { // overlap
-			if (pac_coor >= bns->ambs[mid].offset) {
-				nn += bns->ambs[mid].offset + bns->ambs[mid].len < pac_coor + len?
-					bns->ambs[mid].offset + bns->ambs[mid].len - pac_coor : len;
+			if (pos_f >= bns->ambs[mid].offset) {
+				nn += bns->ambs[mid].offset + bns->ambs[mid].len < pos_f + len?
+					bns->ambs[mid].offset + bns->ambs[mid].len - pos_f : len;
 			} else {
-				nn += bns->ambs[mid].offset + bns->ambs[mid].len < pac_coor + len?
-					bns->ambs[mid].len : len - (bns->ambs[mid].offset - pac_coor);
+				nn += bns->ambs[mid].offset + bns->ambs[mid].len < pos_f + len?
+					bns->ambs[mid].len : len - (bns->ambs[mid].offset - pos_f);
 			}
 			break;
 		}
