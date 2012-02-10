@@ -28,6 +28,7 @@ static int usage()
 	fprintf(stderr, "         bwt2sa        generate SA from BWT and Occ\n");
 	fprintf(stderr, "         pac2cspac     convert PAC to color-space PAC\n");
 	fprintf(stderr, "         stdsw         standard SW/NW alignment\n");
+	fprintf(stderr, "         speed         index lookup speed\n");
 	fprintf(stderr, "\n");
 	return 1;
 }
@@ -59,6 +60,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "dbwtsw") == 0) ret = bwa_bwtsw2(argc-1, argv+1);
 	else if (strcmp(argv[1], "bwasw") == 0) ret = bwa_bwtsw2(argc-1, argv+1);
 	else if (strcmp(argv[1], "fastmap") == 0) ret = main_fastmap(argc-1, argv+1);
+	else if (strcmp(argv[1], "speed") == 0) ret = bwa_speed(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
 		return 1;

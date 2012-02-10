@@ -22,6 +22,7 @@ extern "C" {
 	int bwa_bwtsw2(int argc, char *argv[]);
 
 	int main_fastmap(int argc, char *argv[]);
+        int bwa_speed(int argc, char *argv[]);
 
 #ifdef __cplusplus
 }

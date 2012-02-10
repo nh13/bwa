@@ -433,6 +433,9 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
   if(ok1 != ok2 || ol1 != ol2 || ok1 != ok3 || ol1 != ol3) {
       fprintf(stderr, "\nERROR:\nc=%u k=%lld *l=%lld\n",
               c, k, *l); 
+      fprintf(stderr, "o{k,l}1 = Heng Li's bwt_2occ\n");
+      fprintf(stderr, "o{k,l}2 = Roel Kluin's bwt_2occ\n");
+      fprintf(stderr, "o{k,l}1 = Heng Li's bwt_2occ4\n");
       fprintf(stderr, "ok1=%lld ok2=%lld ok3=%lld\n",
               ok1, ok2, ok3);
       fprintf(stderr, "ol1=%lld ol2=%lld ol3=%lld\n", 
