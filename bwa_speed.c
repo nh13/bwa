@@ -94,6 +94,7 @@ bwa_speed_core(bwa_speed_opt_t *opt)
   // load bwt
   str = (char*)calloc(strlen(opt->fn_fasta) + 10, 1);
   strcpy(str, opt->fn_fasta); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
+  strcpy(str, opt->fn_fasta); strcat(str, ".sa"); bwt_restore_sa(str, bwt);
   free(str);
   str = NULL;
 
