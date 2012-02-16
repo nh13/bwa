@@ -413,11 +413,12 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
 {
   bwtint_t ok1, ol1, ok2, ol2, ok3, ol3;
   bwtint_t cntk[4], cntl[4];
+  static int counter = 0;
 
   ok1 = ok2 = ok3 = 0;
   ol1 = ol2 = ol3 = 0;
   
-  bwt_aux_2occ(bwt, k, *l, c, &ok1, &ol1);
+  bwt_aux_2occ(bwt, k-1, *l, c, &ok1, &ol1);
   // NB: we must add the counts, as this is added in the bwt_2occ_rk function
   ok1 += bwt->L2[c] + 1;
   ol1 += bwt->L2[c];
@@ -425,22 +426,28 @@ inline bwtint_t bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t *l, ubyte_t c)
   ol2 = *l;
   ok2 = bwt_2occ_rk(bwt, k, &ol2, c);
 
-  bwt_2occ4(bwt, k, *l, cntk, cntl);
+  bwt_2occ4(bwt, k-1, *l, cntk, cntl);
   // NB: we must add the counts, as this is added in the bwt_2occ_rk function
   ok3 = cntk[c] + bwt->L2[c] + 1;
   ol3 = cntl[c] + bwt->L2[c];
 
+  /*
+  fprintf(stderr, "ok1=%lld ok2=%lld ok3=%lld\t", ok1, ok2, ok3);
+  fprintf(stderr, "ol1=%lld ol2=%lld ol3=%lld\n", ol1, ol2, ol3);
+  */
   if(ok1 != ok2 || ol1 != ol2 || ok1 != ok3 || ol1 != ol3) {
-      fprintf(stderr, "\nERROR:\nc=%u k=%lld *l=%lld\n",
-              c, k, *l); 
-      fprintf(stderr, "o{k,l}1 = Heng Li's bwt_2occ\n");
-      fprintf(stderr, "o{k,l}2 = Roel Kluin's bwt_2occ\n");
-      fprintf(stderr, "o{k,l}1 = Heng Li's bwt_2occ4\n");
-      fprintf(stderr, "ok1=%lld ok2=%lld ok3=%lld\n",
-              ok1, ok2, ok3);
-      fprintf(stderr, "ol1=%lld ol2=%lld ol3=%lld\n", 
-              ol1, ol2, ol3);
-      exit(1);
+      if (ok1 <= ol1 || ok2 != (bwtint_t)-1 || ok3 <= ol3) {
+          fprintf(stderr, "\nERROR:\nc=%u k=%lld *l=%lld\n",
+                  c, k, *l); 
+          fprintf(stderr, "o{k,l}1 = Heng Li's bwt_2occ\n");
+          fprintf(stderr, "o{k,l}2 = Roel Kluin's bwt_2occ\n");
+          fprintf(stderr, "o{k,l}3 = Heng Li's bwt_2occ4\n");
+          fprintf(stderr, "bwt->primary:%lld\t", bwt->primary);
+          fprintf(stderr, "bwt->seq_len:%lld\n", bwt->seq_len);
+          if(counter > 10) {
+              exit(1);
+          }
+      }
   }
 
   *l = ol2;
