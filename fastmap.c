@@ -54,9 +54,9 @@ int main_mem(int argc, char *argv[])
 	opt = mem_opt_init();
 	memset(&opt0, 0, sizeof(mem_opt_t));
 #ifdef USE_HTSLIB
-	while ((c = getopt(argc, argv, "epaFMCSPHYk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:o:")) >= 0) {
+	while ((c = getopt(argc, argv, "epaFMCSPHYk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:K:o:")) >= 0) {
 #else
-	while ((c = getopt(argc, argv, "epaFMCSPHYk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:")) >= 0) {
+	while ((c = getopt(argc, argv, "epaFMCSPHYk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:K:")) >= 0) {
 #endif
 		if (c == 'k') opt->min_seed_len = atoi(optarg), opt0.min_seed_len = 1;
 		else if (c == 'x') mode = optarg;
@@ -128,6 +128,8 @@ int main_mem(int argc, char *argv[])
 		} else if (c == 'o') { 
 			opt->bam_output = atoi(optarg); 
 #endif
+		} else if (c == 'K') {
+			opt->chunk_size = atoi(optarg);
 		}
 		else return 1;
 	}
@@ -158,6 +160,7 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "       -x STR        read type. Setting -x changes multiple parameters unless overriden [null]\n");
 		fprintf(stderr, "                     pacbio: -k17 -W40 -r10 -A2 -B5 -O2 -E1 -L0\n");
 		fprintf(stderr, "                     pbread: -k13 -W40 -c1000 -r10 -A2 -B5 -O2 -E1 -N25 -FeaD.001\n");
+		fprintf(stderr, "       -K INT        the fixed chunk size for reads (specify for determinism) [%d]\n", opt->chunk_size);
 		fprintf(stderr, "\nInput/output options:\n\n");
 		fprintf(stderr, "       -p            first query file consists of interleaved paired-end sequences\n");
 		fprintf(stderr, "       -R STR        read group header line such as '@RG\\tID:foo\\tSM:bar' [null]\n");
@@ -263,8 +266,9 @@ int main_mem(int argc, char *argv[])
 #else
 		bwa_print_sam_hdr(idx->bns, rg_line);
 #endif
-	} 
-	while ((seqs = bseq_read(opt->chunk_size * opt->n_threads, &n, ks, ks2)) != 0) {
+	}
+	int chunk_size = (opt->chunk_size <= 0) ? (MEM_CHUNK_SIZE * opt->n_threads) : opt->chunk_size;
+	while ((seqs = bseq_read(chunk_size, &n, ks, ks2)) != 0) {
 		int64_t size = 0;
 		if ((opt->flag & MEM_F_PE) && (n&1) == 1) {
 			if (bwa_verbose >= 2)
