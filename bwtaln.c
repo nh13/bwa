@@ -126,6 +126,11 @@ void bwa_cal_sa_reg_gap(int tid, bwt_t *const bwt, int n_seqs, bwa_seq_t *seqs, 
 			free(p->name); free(p->seq); free(p->rseq); free(p->qual);
 			p->name = 0; p->seq = p->rseq = p->qual = 0;
 		}
+		else {
+			// complement it back
+			for (j = 0; j < p->len; ++j) // we need to complement
+				p->seq[j] = p->seq[j] > 3? 4 : 3 - p->seq[j];
+		}
 	}
 	free(seed_w); free(w);
 	gap_destroy_stack(stack);
