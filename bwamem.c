@@ -116,11 +116,7 @@ mem_opt_t *mem_opt_init()
 #define intv_lt(a, b) ((a).info < (b).info)
 KSORT_INIT(mem_intv, bwtintv_t, intv_lt)
 
-typedef struct {
-	bwtintv_v mem, mem1, *tmpv[2];
-} smem_aux_t;
-
-static smem_aux_t *smem_aux_init()
+smem_aux_t *smem_aux_init()
 {
 	smem_aux_t *a;
 	a = calloc(1, sizeof(smem_aux_t));
@@ -129,7 +125,7 @@ static smem_aux_t *smem_aux_init()
 	return a;
 }
 
-static void smem_aux_destroy(smem_aux_t *a)
+void smem_aux_destroy(smem_aux_t *a)
 {	
 	free(a->tmpv[0]->a); free(a->tmpv[0]);
 	free(a->tmpv[1]->a); free(a->tmpv[1]);
@@ -514,7 +510,6 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 	return m;
 }
 
-typedef kvec_t(int) int_v;
 
 static void mem_mark_primary_se_core(const mem_opt_t *opt, int n, mem_alnreg_t *a, int_v *z)
 { // similar to the loop in mem_chain_flt()
@@ -1188,19 +1183,7 @@ mem_aln_t mem_reg2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *
 	return a;
 }
 
-typedef struct {
-	const mem_opt_t *opt;
-	const bwt_t *bwt;
-	const bntseq_t *bns;
-	const uint8_t *pac;
-	const mem_pestat_t *pes;
-	smem_aux_t **aux;
-	bseq1_t *seqs;
-	mem_alnreg_v *regs;
-	int64_t n_processed;
-} worker_t;
-
-static void worker1(void *data, int i, int tid)
+void worker1(void *data, int i, int tid)
 {
 	worker_t *w = (worker_t*)data;
 	if (!(w->opt->flag&MEM_F_PE)) {

@@ -30,6 +30,7 @@
 #include "bwt.h"
 #include "bntseq.h"
 #include "bwa.h"
+#include "kvec.h"
 
 #define MEM_MAPQ_COEF 30.0
 #define MEM_MAPQ_MAX  60
@@ -123,6 +124,24 @@ typedef struct { // This struct is only used for the convenience of API.
 	int score, sub, alt_sc;
 } mem_aln_t;
 
+typedef struct {
+    bwtintv_v mem, mem1, *tmpv[2];
+} smem_aux_t;
+
+typedef struct {
+    const mem_opt_t *opt;
+    const bwt_t *bwt;
+    const bntseq_t *bns;
+    const uint8_t *pac;
+    const mem_pestat_t *pes;
+    smem_aux_t **aux;
+    bseq1_t *seqs;
+    mem_alnreg_v *regs;
+    int64_t n_processed;
+} worker_t;
+
+typedef kvec_t(int) int_v;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -135,6 +154,14 @@ extern "C" {
 
 	mem_opt_t *mem_opt_init(void);
 	void mem_fill_scmat(int a, int b, int8_t mat[25]);
+
+	int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
+	void mem_reorder_primary5(int T, mem_alnreg_v *a);
+
+	smem_aux_t *smem_aux_init();
+	void smem_aux_destroy(smem_aux_t *a);
+
+	void worker1(void *data, int i, int tid);
 
 	/**
 	 * Align a batch of sequences and generate the alignments in the SAM format
